@@ -3,6 +3,8 @@ import time
 import os
 from dotenv import load_dotenv
 from selenium import webdriver
+import csv
+from datetime import datetime
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys # Necesario para borrar inputs
@@ -16,7 +18,11 @@ load_dotenv()
 USUARIO = os.getenv("CIANBOX_USER")
 PASSWORD = os.getenv("CIANBOX_PASS")
 URL_LOGIN = os.getenv("URL_LOGIN")
+
 ARCHIVO_JSON = "lote_cianbox.json"
+CARPETA_BASE = os.getcwd()
+DIR_LOGS = os.path.join(CARPETA_BASE, "logs")
+ARCHIVO_LOG_CSV = os.path.join(DIR_LOGS, "audit_log.csv")
 
 # ==============================================================================
 # 1. CONSTANTES JS (MEJORADAS PARA EVITAR "UNDEFINED")
@@ -70,12 +76,13 @@ JS_BUSCAR_PRODUCTO = """
             
             // Asignar Nombre Visual (Evitar Undefined)
             var inputNombre = document.querySelector('.box_main_field');
+            var nombreFinal = data.nombre || codigo;
             if(inputNombre) {
                 // Si data.nombre es null, ponemos el código para que no quede feo
-                inputNombre.value = data.nombre || codigo; 
+                inputNombre.value = nombreFinal; 
                 inputNombre.dispatchEvent(new Event('input', { bubbles: true }));
             }
-            callback("OK");
+            callback("OK|" + nombreFinal);
         } else { callback("ERROR"); }
     }).catch(e => callback("EXCEPTION: " + e));
 """
@@ -109,12 +116,16 @@ SELECTORES = {
     "tab_percepciones": (By.CSS_SELECTOR, "a[rel='percepcion']"),
     "select_provincia": (By.NAME, "add_percepcion"),
     "monto_percepcion": (By.NAME, "add_monto"),
-    "btn_add_percepcion": (By.ID, "add_impuesto") # Confirmar si este es el ID del botón "+" de percepciones
+    "btn_add_percepcion": (By.ID, "add_impuesto"),
+    "btn_cerrar_ventana": (By.CSS_SELECTOR, "a.close[alt='Cerrar']"), # Botón 'X' del modal principal
+    "btn_aceptar_confirmacion": (By.CSS_SELECTOR, "a.accept"), # Botón 'Aceptar' de la ventana de confirmación
+    "notificacion_error": (By.CSS_SELECTOR, "div.windowNtf")
 }
 
 MAPEO_PROVINCIAS = {
     "Capital Federal": "2",
     "Ciudad de Buenos Aires": "2",
+    "C.A.B.A.": "2",
     "Santa Fe": "3",
     "Córdoba": "4",
     "Tucuman": "6",
@@ -132,6 +143,10 @@ MAPEO_PROVINCIAS = {
 def iniciar_driver():
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
+    # --- MODO HEADLESS (Descomentar para ejecutar en segundo plano) ---
+    # options.add_argument("--headless")
+    # options.add_argument("--disable-gpu")
+    # options.add_argument("--window-size=1920,1080") # Necesario para evitar errores de renderizado
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 def limpiar_monto_para_input(monto_str):
@@ -173,15 +188,59 @@ def escribir_seguro(driver, selector, texto):
     elemento.send_keys(Keys.TAB)
     time.sleep(0.1)
 
+def reiniciar_modal(driver):
+    """Cierra el modal actual y vuelve a abrir el formulario de Alta."""
+    print("      🔄 Reiniciando formulario...")
+    
+    # 1. Intentar cerrar la ventana principal (el modal de carga)
+    try:
+        click_seguro(driver, SELECTORES["btn_cerrar_ventana"])
+    except Exception as e:
+        # Fallback si el click_seguro falla (ej. elemento no clickeable)
+        driver.execute_script("document.querySelector('a.close[alt=\"Cerrar\"]').click();")
+        print(f"         ⚠️ Fallback para cerrar ventana principal: {e}")
+    
+    # 2. Esperar y hacer clic en el botón 'Aceptar' de la ventana de confirmación
+    # Esta ventana puede no aparecer si no hay cambios o si el cierre es directo
+    try:
+        wait = WebDriverWait(driver, 5) # Esperar hasta 5 segundos por la confirmación
+        wait.until(EC.element_to_be_clickable(SELECTORES["btn_aceptar_confirmacion"])).click()
+        time.sleep(0.5) # Pequeña pausa para que la ventana de confirmación se cierre
+        print("         ✅ Confirmación de cierre aceptada.")
+    except:
+        print("         ℹ️ No se detectó ventana de confirmación de cierre o no fue necesaria.")
+        pass
+    
+    time.sleep(.8) # Pausa para asegurar que todo se cerró antes de reabrir
+    click_seguro(driver, SELECTORES["btn_alta"])
+    time.sleep(.8) # Pausa para que el formulario de alta cargue completamente
+    print("         ✅ Formulario de alta reabierto.")
+
+def inicializar_log_selenium():
+    """Asegura que la carpeta de logs y el archivo CSV existan."""
+    if not os.path.exists(DIR_LOGS):
+        os.makedirs(DIR_LOGS)
+    if not os.path.exists(ARCHIVO_LOG_CSV):
+        with open(ARCHIVO_LOG_CSV, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Fecha", "Archivo", "Proveedor", "Tipo", "Numero", "Estado", "Motivo", "Diferencia"])
+
+def registrar_log_selenium(cabecera_data, estado, motivo, diferencia="0.00"):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    archivo_ref = f"Selenium_Carga_{cabecera_data.get('proveedor', 'N/A')}_{cabecera_data.get('numero', 'N/A')}"
+    with open(ARCHIVO_LOG_CSV, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow([timestamp, archivo_ref, cabecera_data.get('proveedor', 'N/A'), cabecera_data.get('tipo', 'N/A'), cabecera_data.get('numero', 'N/A'), estado, motivo, diferencia])
+
 def login(driver):
     print("🔑 Logueando...")
     driver.get(URL_LOGIN)
-    time.sleep(2)
+    time.sleep(1.5)
     if len(driver.find_elements(*SELECTORES["login_user"])) > 0:
         driver.find_element(*SELECTORES["login_user"]).send_keys(USUARIO)
         driver.find_element(*SELECTORES["login_pass"]).send_keys(PASSWORD)
         driver.find_element(*SELECTORES["login_btn"]).click()
-        time.sleep(2)
+        time.sleep(1.5)
     else:
         print("   ✅ Ya estabas logueado.")
 
@@ -215,6 +274,7 @@ def procesar_lote(driver):
         facturas = json.load(f)
 
     wait = WebDriverWait(driver, 10)
+    inicializar_log_selenium() # Inicializar el log al inicio del procesamiento del lote
 
     # --- PASO 1: NAVEGACIÓN INICIAL (FUERA DEL BUCLE) ---
     navegar_una_sola_vez(driver)
@@ -225,9 +285,19 @@ def procesar_lote(driver):
         print(f"\n📄 [{i+1}/{len(facturas)}] Procesando: {cab['numero']}")
 
         try:
-            # A. CABECERA
+            # A. PROVEEDOR (JS)
+            res_prov = driver.execute_async_script(JS_BUSCAR_PROVEEDOR, cab["proveedor"])
+            if "ERROR" in res_prov:
+                print("   ❌ Proveedor no encontrado.")
+                registrar_log_selenium(cab, "ERROR_PROVEEDOR", "Proveedor no encontrado en Cianbox.")
+                continue
+            
+            # B. CABECERA
             # Tip: Como es "Nueva Compra", los campos están limpios, pero por seguridad limpiamos igual
-            escribir_seguro(driver, SELECTORES["fecha"], cab["fecha"])
+            # Ajuste Máscara: Cianbox tiene el '20' fijo (ej: __/__/20__). Enviamos ddmmyy (180226).
+            fecha_dt = datetime.strptime(cab["fecha"], "%d/%m/%Y")
+            fecha_formateada = fecha_dt.strftime("%d%m%y")
+            escribir_seguro(driver, SELECTORES["fecha"], fecha_formateada)
             escribir_seguro(driver, SELECTORES["pv"], cab["puntoVenta"])
             escribir_seguro(driver, SELECTORES["numero"], cab["numero"])
 
@@ -237,11 +307,6 @@ def procesar_lote(driver):
             Select(driver.find_element(*SELECTORES["select_tipo"])).select_by_value(val_tipo)
             Select(driver.find_element(*SELECTORES["select_letra"])).select_by_value(val_letra)
 
-            # B. PROVEEDOR (JS)
-            res_prov = driver.execute_async_script(JS_BUSCAR_PROVEEDOR, cab["proveedor"])
-            if "ERROR" in res_prov:
-                print("   ❌ Proveedor no encontrado.")
-                continue
 
             # C. PRODUCTOS
             for prod in factura["productos"]:
@@ -249,8 +314,15 @@ def procesar_lote(driver):
                 res_prod = driver.execute_async_script(JS_BUSCAR_PRODUCTO, prod["codigo"])
                 if "ERROR" in res_prod:
                     print(f"   ⚠️ Item {prod['codigo']} no encontrado.")
+                    registrar_log_selenium(cab, "ERROR_PRODUCTO", f"Producto '{prod['codigo']}' no encontrado en Cianbox.")
                     continue
                 
+                # Loguear producto encontrado
+                nombre_prod_cian = res_prod.split("|", 1)[1] if "|" in res_prod else "S/D"
+                
+                if nombre_prod_cian != prod['codigo']:
+                    registrar_log_selenium(cab, "PRODUCTO_OK", f"Código PDF: {prod['codigo']} -> Cianbox: {nombre_prod_cian}")
+
                 # 2. Cantidad y Precio (Ahora con limpieza de miles)
                 escribir_seguro(driver, SELECTORES["cant"], prod["cantidad"])
                 # Limpiamos el precio antes de mandarlo
@@ -262,6 +334,19 @@ def procesar_lote(driver):
                 
                 # Esperar que baje a la tabla (buscando el botón de borrar del renglón o pausa simple)
                 time.sleep(0.8)
+
+            # --- DETECCIÓN DE DUPLICADOS ---
+            # Lo hago después de la carga de productos para darle tiempo al AJAX de Cianbox para validar
+            try:
+                div_dup = driver.find_element(By.ID, "mb_duplicated")
+                if div_dup.is_displayed():
+                    texto_error = div_dup.text.replace("\n", " ").strip()
+                    print(f"   ⛔ DUPLICADA: {texto_error}")
+                    registrar_log_selenium(cab, "DUPLICADO", texto_error)
+                    reiniciar_modal(driver)
+                    continue
+            except:
+                pass # El elemento no existe o no es visible, continuamos
 
             # PERCEPCIONES (Versión Reforzada)
             if cab.get("percepciones_iibb"):
@@ -301,6 +386,18 @@ def procesar_lote(driver):
             print("💾 Guardando...")
             driver.find_element(*SELECTORES["guardar"]).click()
             
+            # --- DETECCIÓN ERROR AL GUARDAR (Faltan campos) ---
+            time.sleep(1)
+            try:
+                ntf = driver.find_element(*SELECTORES["notificacion_error"])
+                if ntf.is_displayed() and "Faltan campos" in ntf.text:
+                    print("   ❌ ERROR AL GUARDAR: Faltan campos requeridos.")
+                    registrar_log_selenium(cab, "ERROR_GUARDADO", "Faltan campos requeridos al intentar guardar.")
+                    reiniciar_modal(driver)
+                    continue
+            except:
+                pass
+
             # ESPERA CRÍTICA:
             # Al guardar, la página se recarga o limpia los campos.
             # Esperamos que el campo fecha vuelva a aparecer o esté listo.
@@ -310,9 +407,10 @@ def procesar_lote(driver):
 
         except Exception as e:
             print(f"🔥 Error en factura {cab['numero']}: {e}")
+            registrar_log_selenium(cab, "ERROR_SELENIUM", str(e))
             # Si falla, quizás quedó a mitad de camino. 
             # Podrías intentar recargar la página: driver.refresh()
-            time.sleep(5)
+            time.sleep(3)
 
 if __name__ == "__main__":
     driver = iniciar_driver()
@@ -323,5 +421,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Error Fatal: {e}")
     finally:
-        # driver.quit()
-        pass
+        # Pausa la ejecución y mantiene el navegador abierto para depuración
+        input("Presiona Enter para cerrar el navegador y finalizar el script...")
+        driver.quit()
