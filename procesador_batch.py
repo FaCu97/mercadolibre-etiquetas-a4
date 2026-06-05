@@ -22,6 +22,8 @@ DIR_SALIDA_ERROR = os.path.join(CARPETA_BASE, "03_errores")
 DIR_LOGS = os.path.join(CARPETA_BASE, "logs")
 ARCHIVO_JSON_FINAL = os.path.join(CARPETA_BASE, "lote_cianbox.json")
 ARCHIVO_LOG_CSV = os.path.join(DIR_LOGS, "audit_log.csv")
+ARCHIVO_PROCESADAS_CSV = os.path.join(DIR_LOGS, "procesadas.csv")
+ARCHIVO_ERRORES_CSV = os.path.join(DIR_LOGS, "errores.csv")
 
 # Tolerancia para diferencias de redondeo (en pesos)
 TOLERANCIA = 0.09 
@@ -46,6 +48,9 @@ load_dotenv()
 # Bloqueo para evitar que los prints y logs se mezclen entre hilos
 print_lock = threading.RLock()
 
+# Variable global para almacenar el historial de facturas procesadas
+HISTORIAL_PROCESADO = set()
+
 # ==============================================================================
 # 2. HERRAMIENTAS DE LOGGING Y ARCHIVOS
 # ==============================================================================
@@ -55,19 +60,31 @@ def inicializar_carpetas():
             os.makedirs(d)
             print(f"📁 Carpeta creada: {d}")
 
-    # Crear CSV si no existe
-    if not os.path.exists(ARCHIVO_LOG_CSV):
-        with open(ARCHIVO_LOG_CSV, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(["Fecha", "Archivo", "Proveedor", "Tipo", "Numero", "Estado", "Motivo", "Diferencia"])
+    # Crear CSVs si no existen
+    for archivo in [ARCHIVO_LOG_CSV, ARCHIVO_PROCESADAS_CSV, ARCHIVO_ERRORES_CSV]:
+        if not os.path.exists(archivo):
+            with open(archivo, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Fecha", "Archivo", "Proveedor", "Tipo", "Numero", "Estado", "Motivo", "Diferencia"])
 
 def registrar_log(archivo, proveedor, tipo, numero, estado, motivo, diferencia="0.00"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    row = [timestamp, archivo, proveedor, tipo, numero, estado, motivo, diferencia]
+    
     with print_lock:
         print(f"   📝 Log: {estado} - {motivo}")
-        with open(ARCHIVO_LOG_CSV, 'a', newline='', encoding='utf-8') as f:
+        
+        # Enrutamiento de logs
+        if estado in ["OK", "CARGA_EXITOSA"]:
+            target = ARCHIVO_PROCESADAS_CSV
+        elif "ERROR" in estado or "RECHAZADO" in estado:
+            target = ARCHIVO_ERRORES_CSV
+        else:
+            target = ARCHIVO_LOG_CSV # Informativo (YA_PROCESADA, etc)
+
+        with open(target, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow([timestamp, archivo, proveedor, tipo, numero, estado, motivo, diferencia])
+            writer.writerow(row)
 
 def mover_archivo(ruta_origen, carpeta_destino):
     nombre_archivo = os.path.basename(ruta_origen)
@@ -80,6 +97,35 @@ def mover_archivo(ruta_origen, carpeta_destino):
         destino = os.path.join(carpeta_destino, f"{base}_{timestamp}{ext}")
         
     shutil.move(ruta_origen, destino)
+
+def cargar_historial_procesado():
+    """
+    Lee procesadas.csv y carga en memoria las facturas que ya fueron
+    procesadas correctamente (OK) o cargadas en Cianbox (CARGA_EXITOSA).
+    """
+    global HISTORIAL_PROCESADO
+    HISTORIAL_PROCESADO.clear()
+    
+    if not os.path.exists(ARCHIVO_PROCESADAS_CSV):
+        return
+
+    try:
+        with open(ARCHIVO_PROCESADAS_CSV, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            next(reader, None) # Saltar encabezado
+            for row in reader:
+                if len(row) < 6: continue
+                # Estructura: Fecha, Archivo, Proveedor, Tipo, Numero, Estado, ...
+                prov, tipo, nro, estado = row[2], row[3], row[4], row[5]
+                
+                if estado in ["OK", "CARGA_EXITOSA"]:
+                    # Clave única normalizada: PROVEEDOR_TIPO_NUMERO
+                    key = f"{prov.strip().upper()}_{tipo.strip().upper()}_{nro.strip()}"
+                    HISTORIAL_PROCESADO.add(key)
+        
+        print(f"📚 Historial cargado: {len(HISTORIAL_PROCESADO)} comprobantes ya procesados.")
+    except Exception as e:
+        print(f"⚠️ Error leyendo historial: {e}")
 
 # ==============================================================================
 # 3. EL PARSER (LÓGICA DE EXTRACCIÓN - BASE V12)
@@ -172,6 +218,13 @@ def parsear_cromosol(page, full_text, ruta_pdf):
             elif "DEBITO" in header_text: tipo = "NOTA DE DEBITO"
             else: tipo = "FACTURA"
 
+            mueve_stock = True
+            # --- REGLA DE NEGOCIO: NC CROMOSOL (STOCK) ---
+            if tipo == "NOTA DE CREDITO":
+                # Si NO tiene el patrón "N/C S/F Nro: ..., RCL ...", asumimos que es financiera y no debe afectar stock.
+                if not re.search(r'N/C S/F Nro:?\s*[\d\.]+,?\s*RCL\s*[\d\.]+', full_text, re.IGNORECASE):
+                    mueve_stock = False
+
             letra = "X"
             match_letra = re.search(r'(?:^|\n)\s*([ABCE])\s*(?:$|\n)', header_text)
             if match_letra: letra = match_letra.group(1)
@@ -181,7 +234,8 @@ def parsear_cromosol(page, full_text, ruta_pdf):
                 "cabecera": {
                     "proveedor": "CROMOSOL", "tipo": tipo, "letra": letra,
                     "fecha": "HOY", "puntoVenta": "0000", "numero": "00000000",
-                    "total": "0,00", "percepciones_iibb": []
+                    "total": "0,00", "percepciones_iibb": [],
+                    "mueve_stock": mueve_stock
                 },
                 "productos": []
             }
@@ -227,7 +281,7 @@ def parsear_cromosol(page, full_text, ruta_pdf):
             val_iva_str, _ = extraer_valor_por_columna(words_pie, "I.V.A.")
             val_total_str, _ = extraer_valor_por_columna(words_pie, "TOTAL")
             """
-            print(f"DEBUG FINAL: Subtotal='{val_subtotal_str}', Descuento='{val_descuento_str}', Neto='{val_neto_str}', IVA='{val_iva_str}', Total='{val_total_str}'")
+            #print(f"DEBUG FINAL: Subtotal='{val_subtotal_str}', Descuento='{val_descuento_str}', Neto='{val_neto_str}', IVA='{val_iva_str}', Total='{val_total_str}'")
             
             # Extraer la cadena de la percepción de IIBB
             val_iibb_str_extracted, jur_iibb = extraer_valor_por_columna(words_pie, "IIBB")
@@ -470,6 +524,15 @@ def procesar_wrapper(ruta):
         tipo = datos["cabecera"].get("tipo", "?") if datos and "cabecera" in datos else "?"
         nro = datos["cabecera"].get("numero", "?") if datos and "cabecera" in datos else "?"
 
+        # --- CHEQUEO DE DUPLICADOS HISTÓRICOS ---
+        key_actual = f"{prov.strip().upper()}_{tipo.strip().upper()}_{nro.strip()}"
+        if key_actual in HISTORIAL_PROCESADO:
+            msg = f"Factura ya procesada anteriormente (Historial: {prov} {nro})"
+            print(f"   ⏭️ SALTADO: {msg}")
+            mover_archivo(ruta, DIR_SALIDA_ERROR) # Movemos a error/descarte para no procesar de nuevo
+            registrar_log(nombre, prov, tipo, nro, "YA_PROCESADA", "Detectada en audit_log.csv")
+            return None
+
         if error:
             print(f"   ❌ RECHAZADO: {error}")
             mover_archivo(ruta, DIR_SALIDA_ERROR)
@@ -483,6 +546,9 @@ def procesar_wrapper(ruta):
 
 def ejecutar_lote():
     inicializar_carpetas()
+    
+    # Cargar la "memoria" del sistema antes de empezar
+    cargar_historial_procesado()
     
     archivos = glob.glob(os.path.join(DIR_ENTRADA, "*.[pP][dD][fF]"))
     print(f"\n🚀 Iniciando procesamiento de {len(archivos)} archivos en '{DIR_ENTRADA}'...")

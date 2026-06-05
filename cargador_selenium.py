@@ -23,6 +23,8 @@ ARCHIVO_JSON = "lote_cianbox.json"
 CARPETA_BASE = os.getcwd()
 DIR_LOGS = os.path.join(CARPETA_BASE, "logs")
 ARCHIVO_LOG_CSV = os.path.join(DIR_LOGS, "audit_log.csv")
+ARCHIVO_PROCESADAS_CSV = os.path.join(DIR_LOGS, "procesadas.csv")
+ARCHIVO_ERRORES_CSV = os.path.join(DIR_LOGS, "errores.csv")
 
 # ==============================================================================
 # 1. CONSTANTES JS (MEJORADAS PARA EVITAR "UNDEFINED")
@@ -60,30 +62,56 @@ JS_BUSCAR_PROVEEDOR = """
 JS_BUSCAR_PRODUCTO = """
     var callback = arguments[arguments.length - 1];
     var codigo = arguments[0];
+    var codigoNorm = codigo.trim().toUpperCase();
     
     fetch("/equipstore/modules/pv_productos/acomplete.php", {
         headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', 'x-requested-with': 'XMLHttpRequest' },
         body: "id_usuario=5&incluye_insumos=1&id_moneda=1&cotizacion=1&userid=5&userlevel=1&sec=pv_compras&box=alta&bsearch=" + encodeURIComponent(codigo),
         method: "POST", credentials: "include"
     }).then(r => r.text()).then(html => {
-        var match = html.match(/rel="([^"]+)"/) || html.match(/rel='([^']+)'/);
-        if (match && match[1]) {
-            var data = JSON.parse(match[1].replace(/&quot;/g, '"'));
-            
+        // Creamos un elemento temporal para parsear la tabla de resultados
+        var div = document.createElement('div');
+        div.innerHTML = html;
+        var filas = div.querySelectorAll('tr[rel]');
+        var encontrado = null;
+
+        // Iteramos sobre los resultados para buscar coincidencia exacta
+        for (var i = 0; i < filas.length; i++) {
+            try {
+                var jsonRaw = filas[i].getAttribute('rel').replace(/&quot;/g, '"');
+                var data = JSON.parse(jsonRaw);
+                var desc = (data.desc || "").toUpperCase();
+                var codInterno = (data.adicional && data.adicional.codigo_interno) ? data.adicional.codigo_interno.toString().toUpperCase() : "";
+                
+                // CRITERIOS DE COINCIDENCIA:
+                // 1. El código está entre corchetes en la descripción: "[CODIGO]"
+                // 2. Coincidencia exacta con codigo interno
+                if (desc.includes("[" + codigoNorm + "]") || codInterno === codigoNorm) {
+                    encontrado = data;
+                    break; // Encontramos el exacto, dejamos de buscar
+                }
+            } catch(e) { continue; }
+        }
+
+        if (encontrado) {
             // Asignar ID
             var inputId = document.querySelector('input[name="add_id_producto"]');
-            if (inputId) inputId.value = data.id;
+            if (inputId) inputId.value = encontrado.id;
             
-            // Asignar Nombre Visual (Evitar Undefined)
+            // Asignar Nombre Visual
             var inputNombre = document.querySelector('.box_main_field');
-            var nombreFinal = data.nombre || codigo;
+            var nombreFinal = encontrado.nombre || codigo;
             if(inputNombre) {
-                // Si data.nombre es null, ponemos el código para que no quede feo
                 inputNombre.value = nombreFinal; 
                 inputNombre.dispatchEvent(new Event('input', { bubbles: true }));
             }
             callback("OK|" + nombreFinal);
-        } else { callback("ERROR"); }
+        } else { 
+            // Si no se encuentra coincidencia exacta, limpiamos el ID para evitar asociaciones erróneas
+            var inputId = document.querySelector('input[name="add_id_producto"]');
+            if (inputId) inputId.value = "0";
+            callback("NOT_FOUND"); 
+        }
     }).catch(e => callback("EXCEPTION: " + e));
 """
 
@@ -105,6 +133,7 @@ SELECTORES = {
     # Formulario
     "select_tipo":   (By.NAME, "id_comprobante"),
     "select_letra":  (By.NAME, "id_tipo"),
+    "select_stock":  (By.NAME, "recibida"),
     "fecha":   (By.NAME, "fecha_comprobante"),
     "pv":      (By.NAME, "punto_venta"),
     "numero":  (By.NAME, "numero"),
@@ -220,17 +249,28 @@ def inicializar_log_selenium():
     """Asegura que la carpeta de logs y el archivo CSV existan."""
     if not os.path.exists(DIR_LOGS):
         os.makedirs(DIR_LOGS)
-    if not os.path.exists(ARCHIVO_LOG_CSV):
-        with open(ARCHIVO_LOG_CSV, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(["Fecha", "Archivo", "Proveedor", "Tipo", "Numero", "Estado", "Motivo", "Diferencia"])
+    
+    for archivo in [ARCHIVO_LOG_CSV, ARCHIVO_PROCESADAS_CSV, ARCHIVO_ERRORES_CSV]:
+        if not os.path.exists(archivo):
+            with open(archivo, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Fecha", "Archivo", "Proveedor", "Tipo", "Numero", "Estado", "Motivo", "Diferencia"])
 
 def registrar_log_selenium(cabecera_data, estado, motivo, diferencia="0.00"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     archivo_ref = f"Selenium_Carga_{cabecera_data.get('proveedor', 'N/A')}_{cabecera_data.get('numero', 'N/A')}"
-    with open(ARCHIVO_LOG_CSV, 'a', newline='', encoding='utf-8') as f:
+    row = [timestamp, archivo_ref, cabecera_data.get('proveedor', 'N/A'), cabecera_data.get('tipo', 'N/A'), cabecera_data.get('numero', 'N/A'), estado, motivo, diferencia]
+    
+    if estado in ["OK", "CARGA_EXITOSA"]:
+        target = ARCHIVO_PROCESADAS_CSV
+    elif "ERROR" in estado or "RECHAZADO" in estado:
+        target = ARCHIVO_ERRORES_CSV
+    else:
+        target = ARCHIVO_LOG_CSV
+
+    with open(target, 'a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow([timestamp, archivo_ref, cabecera_data.get('proveedor', 'N/A'), cabecera_data.get('tipo', 'N/A'), cabecera_data.get('numero', 'N/A'), estado, motivo, diferencia])
+        writer.writerow(row)
 
 def login(driver):
     print("🔑 Logueando...")
@@ -267,6 +307,33 @@ def navegar_una_sola_vez(driver):
     wait.until(EC.presence_of_element_located(SELECTORES["fecha"]))
     print("✅ Formulario listo. Iniciando bucle de carga...")
 
+def cargar_historial_cargas_exitosas():
+    """
+    Lee procesadas.csv y retorna un set con las claves de facturas ya cargadas en Cianbox.
+    Clave: PROVEEDOR_TIPO_NUMERO
+    """
+    historial = set()
+    if not os.path.exists(ARCHIVO_PROCESADAS_CSV):
+        return historial
+
+    try:
+        with open(ARCHIVO_PROCESADAS_CSV, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            next(reader, None) # Saltar encabezado
+            for row in reader:
+                if len(row) < 6: continue
+                # Estructura: Fecha, Archivo, Proveedor, Tipo, Numero, Estado, ...
+                prov, tipo, nro, estado = row[2], row[3], row[4], row[5]
+                
+                # Solo nos importa si ya fue cargada exitosamente en Cianbox
+                if estado == "CARGA_EXITOSA":
+                    key = f"{prov.strip().upper()}_{tipo.strip().upper()}_{nro.strip()}"
+                    historial.add(key)
+        print(f"📚 Historial de cargas: {len(historial)} comprobantes ya subidos.")
+    except Exception as e:
+        print(f"⚠️ Error leyendo historial de cargas: {e}")
+    
+    return historial
 
 def procesar_lote(driver):
     if not os.path.exists(ARCHIVO_JSON): return
@@ -275,6 +342,9 @@ def procesar_lote(driver):
 
     wait = WebDriverWait(driver, 10)
     inicializar_log_selenium() # Inicializar el log al inicio del procesamiento del lote
+    
+    # --- NUEVO: Cargar historial para evitar duplicados ---
+    historial_cargadas = cargar_historial_cargas_exitosas()
 
     # --- PASO 1: NAVEGACIÓN INICIAL (FUERA DEL BUCLE) ---
     navegar_una_sola_vez(driver)
@@ -282,6 +352,13 @@ def procesar_lote(driver):
     # --- PASO 2: BUCLE DE CARGA ---
     for i, factura in enumerate(facturas):
         cab = factura["cabecera"]
+        
+        # --- CHEQUEO DE DUPLICADOS LOCAL ---
+        key = f"{cab['proveedor'].strip().upper()}_{cab['tipo'].strip().upper()}_{cab['numero'].strip()}"
+        if key in historial_cargadas:
+            print(f"⏭️ SALTADO: {cab['numero']} (Ya figura como CARGA_EXITOSA)")
+            continue
+            
         print(f"\n📄 [{i+1}/{len(facturas)}] Procesando: {cab['numero']}")
 
         try:
@@ -307,31 +384,50 @@ def procesar_lote(driver):
             Select(driver.find_element(*SELECTORES["select_tipo"])).select_by_value(val_tipo)
             Select(driver.find_element(*SELECTORES["select_letra"])).select_by_value(val_letra)
 
+            # Pausa para asegurar que el cambio de tipo de comprobante no resetee el campo de stock
+            time.sleep(1)
+
+            # Control de Stock (NC Financieras vs Devolución Mercadería)
+            mueve_stock = cab.get("mueve_stock", True)
+            print(f"      📦 Configuración de Stock: {'MUEVE STOCK (toda_sr)' if mueve_stock else 'NO MUEVE STOCK (no_stock)'}")
+            
+            select_stock = Select(driver.find_element(*SELECTORES["select_stock"]))
+            if not mueve_stock:
+                select_stock.select_by_value("no_stock")
+            else:
+                # Default: Mueve stock (toda_sr = En su totalidad, SIN Remito)
+                select_stock.select_by_value("toda_sr")
 
             # C. PRODUCTOS
             for prod in factura["productos"]:
                 # 1. Buscar y Asignar ID (JS)
                 res_prod = driver.execute_async_script(JS_BUSCAR_PRODUCTO, prod["codigo"])
-                if "ERROR" in res_prod:
-                    print(f"   ⚠️ Item {prod['codigo']} no encontrado.")
-                    registrar_log_selenium(cab, "ERROR_PRODUCTO", f"Producto '{prod['codigo']}' no encontrado en Cianbox.")
-                    continue
                 
-                # Loguear producto encontrado
-                nombre_prod_cian = res_prod.split("|", 1)[1] if "|" in res_prod else "S/D"
-                
-                if nombre_prod_cian != prod['codigo']:
-                    registrar_log_selenium(cab, "PRODUCTO_OK", f"Código PDF: {prod['codigo']} -> Cianbox: {nombre_prod_cian}")
+                if "NOT_FOUND" in res_prod or "ERROR" in res_prod:
+                    # CASO: No existe o no coincide exactamente.
+                    # Estrategia: Cargar como ítem de texto (sin ID asociado)
+                    print(f"   ⚠️ Item {prod['codigo']} no vinculado (Carga Genérica).")
+                    registrar_log_selenium(cab, "ITEM_GENERICO", f"Código '{prod['codigo']}' cargado sin vincular a stock.")
+                    
+                    # Escribimos manualmente la descripción del PDF en el input visual
+                    desc_manual = f"{prod['codigo']} {prod['descripcion']}"
+                    escribir_seguro(driver, (By.CSS_SELECTOR, ".box_main_field"), desc_manual)
+                    
+                else:
+                    # CASO: Encontrado y vinculado
+                    nombre_prod_cian = res_prod.split("|", 1)[1] if "|" in res_prod else "S/D"
+                    # print(f"      ✅ Vinculado: {nombre_prod_cian}")
+                    if nombre_prod_cian != prod['codigo']:
+                        registrar_log_selenium(cab, "PRODUCTO_OK", f"Código PDF: {prod['codigo']} -> Cianbox: {nombre_prod_cian}")
 
-                # 2. Cantidad y Precio (Ahora con limpieza de miles)
+                # 2. Cantidad y Precio
                 escribir_seguro(driver, SELECTORES["cant"], prod["cantidad"])
-                # Limpiamos el precio antes de mandarlo
                 precio_limpio = limpiar_monto_para_input(prod["precio"])
                 escribir_seguro(driver, SELECTORES["precio"], precio_limpio)
                 
                 # 3. Agregar
                 driver.find_element(*SELECTORES["btn_add"]).click()
-                
+
                 # Esperar que baje a la tabla (buscando el botón de borrar del renglón o pausa simple)
                 time.sleep(0.8)
 
@@ -397,13 +493,12 @@ def procesar_lote(driver):
                     continue
             except:
                 pass
-
+            
             # ESPERA CRÍTICA:
-            # Al guardar, la página se recarga o limpia los campos.
-            # Esperamos que el campo fecha vuelva a aparecer o esté listo.
             time.sleep(3) 
             wait.until(EC.presence_of_element_located(SELECTORES["fecha"]))
             print("✅ Guardado. Formulario listo para la siguiente.")
+            registrar_log_selenium(cab, "CARGA_EXITOSA", "Carga confirmada en Cianbox")
 
         except Exception as e:
             print(f"🔥 Error en factura {cab['numero']}: {e}")
