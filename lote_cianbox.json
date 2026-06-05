@@ -2,34 +2,21 @@
     {
         "cabecera": {
             "proveedor": "CROMOSOL",
-            "tipo": "FACTURA",
+            "tipo": "NOTA DE CREDITO",
             "letra": "A",
-            "fecha": "17/10/2025",
-            "puntoVenta": "0021",
-            "numero": "01078575",
-            "total": "239.039,85",
-            "percepciones_iibb": [
-                {
-                    "jurisdiccion": "Capital Federal",
-                    "monto": "8.571,15"
-                }
-            ],
-            "mueve_stock": true
+            "fecha": "12/01/2026",
+            "puntoVenta": "0018",
+            "numero": "00141650",
+            "total": "1.411,53",
+            "percepciones_iibb": [],
+            "mueve_stock": false
         },
         "productos": [
             {
-                "codigo": "1510/D",
-                "descripcion": "MANIJA INT.REN.CLIO II 99/02 NEGRA",
-                "cantidad": "30",
-                "precio": "3.174,50",
-                "iva": "21.00",
-                "descuento": "0,00"
-            },
-            {
-                "codigo": "1510/I",
-                "descripcion": "MANIJA INT.REN.CLIO II 99/02 NEGRA",
-                "cantidad": "30",
-                "precio": "3.174,50",
+                "codigo": "14423/2I",
+                "descripcion": "COMANDO PTA.FORD FIESTA 02/07 DEL.(CABLE)",
+                "cantidad": "5",
+                "precio": "233,31",
                 "iva": "21.00",
                 "descuento": "0,00"
             }

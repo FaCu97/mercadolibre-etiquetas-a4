@@ -144,55 +144,79 @@ def limpiar_texto_palabra(texto):
     """Limpia el texto de una palabra para comparación (quita espacios extra, etc.)."""
     return texto.strip().upper()
 
-def extraer_valor_por_columna(words, palabra_clave, margen_vertical=60):
-    # Buscamos la palabra clave (ej: "NETO")
-    # 1. Búsqueda Exacta (Prioridad absoluta para evitar TOTAL vs SUBTOTAL)
-    candidatos = [w for w in words if w['text'].strip().upper() == palabra_clave]
-    
-    # 2. Si no hay exacta, búsqueda parcial
-    if not candidatos:
-        candidatos = [w for w in words if palabra_clave in w['text'].upper()]
-        # Filtro de seguridad: Si busco "TOTAL", ignorar "SUBTOTAL"
-        if palabra_clave == "TOTAL":
-            candidatos = [w for w in candidatos if "SUBTOTAL" not in w['text'].upper()]
-
-    if not candidatos: return "0,00", ""
-    
-    # Tomamos el último candidato (el que suele estar más abajo)
-    header = candidatos[0]
-    
-    # --- MEJORA CRÍTICA: Definir el "túnel" vertical de la columna ---
-    # Los números suelen estar alineados a la derecha del encabezado.
-    # Definimos que el número debe estar entre el centro del header y un poco más a la derecha.
+def obtener_valor_debajo_de_header(words, header, margen_vertical=60):
     x_centro_header = (header['x0'] + header['x1']) / 2
-    x_derecha_limite = header['x1'] + 120 # Aumentado para capturar valores desplazados (ej. NETO a 65px)
     
+    # Encontramos si hay algún otro encabezado principal a la derecha de este en la misma línea
+    COLUMNAS_PRINCIPALES = ["SUBTOTAL", "DESCUENTO", "NETO", "I.V.A.", "PERC.", "TOTAL"]
+    otro_headers_derecha = []
+    for w in words:
+        if abs(w['top'] - header['top']) < 4 and w['x0'] > header['x1']:
+            if w['text'].strip().upper() in COLUMNAS_PRINCIPALES:
+                otro_headers_derecha.append(w)
+                
+    if otro_headers_derecha:
+        otro_headers_derecha.sort(key=lambda w: w['x0'])
+        x_derecha_limite = otro_headers_derecha[0]['x0']
+    else:
+        x_derecha_limite = header['x1'] + 120
+        
     y_min = header['bottom']
     y_max = header['bottom'] + margen_vertical
     
     valores_encontrados = []
     for w in words:
-        # ¿Es un número con formato moneda?
         if re.search(r'\d+,\d{2}', w['text']):
             mid_x = (w['x0'] + w['x1']) / 2
-            # Verificamos si está dentro del "túnel" debajo del encabezado
             if x_centro_header - 50 < mid_x < x_derecha_limite:
                 if y_min < w['top'] < y_max:
                     valores_encontrados.append(w)
-
-    # Si hay varios, el Neto suele ser el que está más a la derecha o arriba del total
+                    
     if valores_encontrados:
-        # Ordenamos por altura (el más cercano al header primero)
         valores_encontrados.sort(key=lambda x: x['top'])
         valor_final = valores_encontrados[0]['text'].strip()
     else:
         valor_final = "0,00"
-
-    # Contexto (para detectar jurisdicción de IIBB si aplica)
+        
     palabras_derecha = [w['text'] for w in words if abs(w['top'] - header['top']) < 4 and w['x0'] > header['x1']]
     contexto = " ".join(palabras_derecha).split("TOTAL")[0].strip()
     
     return valor_final, contexto
+
+def extraer_valor_por_columna(words, palabra_clave, margen_vertical=60):
+    # Búsqueda de palabras múltiples (ej. "SUBTOTAL NETO")
+    if " " in palabra_clave:
+        parts = palabra_clave.split()
+        cands_part0 = [w for w in words if w['text'].strip().upper() == parts[0]]
+        for c0 in cands_part0:
+            cands_part1 = [w for w in words if w['text'].strip().upper() == parts[1] and abs(w['top'] - c0['top']) < 4 and 0 < w['x0'] - c0['x1'] < 80]
+            if cands_part1:
+                c1 = cands_part1[0]
+                header = {
+                    'text': palabra_clave,
+                    'x0': c0['x0'],
+                    'x1': c1['x1'],
+                    'top': c0['top'],
+                    'bottom': c0['bottom']
+                }
+                return obtener_valor_debajo_de_header(words, header, margen_vertical)
+                
+    # Búsqueda normal
+    candidatos = [w for w in words if w['text'].strip().upper() == palabra_clave]
+    if not candidatos:
+        candidatos = [w for w in words if palabra_clave in w['text'].upper()]
+        if palabra_clave == "TOTAL":
+            candidatos = [w for w in candidatos if "SUBTOTAL" not in w['text'].upper()]
+            
+    if not candidatos: return "0,00", ""
+    
+    # Si es "SUBTOTAL" y hay más de una, queremos el primero (Gross Subtotal)
+    if palabra_clave == "SUBTOTAL" and len(candidatos) > 1:
+        header = candidatos[0]
+    else:
+        header = candidatos[-1]
+        
+    return obtener_valor_debajo_de_header(words, header, margen_vertical)
 
 # ==============================================================================
 # 4. ESTRATEGIAS DE PARSEO (PROVEEDORES)
@@ -331,7 +355,8 @@ def parsear_cromosol(page, full_text, ruta_pdf):
                             "codigo": cod, "descripcion": desc, "cantidad": str(int(cant_float)),
                             "precio": fila[3], "iva": "21.00", "descuento": "0,00"
                         })
-                    except: pass
+                    except Exception as e:
+                        print(f"      ⚠️ Advertencia: Error al parsear fila de producto {fila}: {e}")
             #print(datos["productos"]) 
             # --- CHEQUEO TOLERANCIA ---
             diff_prod = abs(suma_productos - f_subtotal)

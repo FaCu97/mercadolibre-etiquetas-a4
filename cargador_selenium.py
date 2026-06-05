@@ -5,13 +5,11 @@ from dotenv import load_dotenv
 from selenium import webdriver
 import csv
 from datetime import datetime
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys # Necesario para borrar inputs
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
-from webdriver_manager.chrome import ChromeDriverManager
 
 # --- CONFIGURACIÓN ---
 load_dotenv()
@@ -176,7 +174,7 @@ def iniciar_driver():
     # options.add_argument("--headless")
     # options.add_argument("--disable-gpu")
     # options.add_argument("--window-size=1920,1080") # Necesario para evitar errores de renderizado
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    return webdriver.Chrome(options=options)
 
 def limpiar_monto_para_input(monto_str):
     """
@@ -220,29 +218,38 @@ def escribir_seguro(driver, selector, texto):
 def reiniciar_modal(driver):
     """Cierra el modal actual y vuelve a abrir el formulario de Alta."""
     print("      🔄 Reiniciando formulario...")
+    wait = WebDriverWait(driver, 10)
     
     # 1. Intentar cerrar la ventana principal (el modal de carga)
     try:
         click_seguro(driver, SELECTORES["btn_cerrar_ventana"])
     except Exception as e:
         # Fallback si el click_seguro falla (ej. elemento no clickeable)
-        driver.execute_script("document.querySelector('a.close[alt=\"Cerrar\"]').click();")
-        print(f"         ⚠️ Fallback para cerrar ventana principal: {e}")
+        try:
+            driver.execute_script("document.querySelector('a.close[alt=\"Cerrar\"]').click();")
+        except Exception as e2:
+            print(f"         ⚠️ Fallback para cerrar ventana principal falló: {e2}")
     
     # 2. Esperar y hacer clic en el botón 'Aceptar' de la ventana de confirmación
-    # Esta ventana puede no aparecer si no hay cambios o si el cierre es directo
     try:
-        wait = WebDriverWait(driver, 5) # Esperar hasta 5 segundos por la confirmación
-        wait.until(EC.element_to_be_clickable(SELECTORES["btn_aceptar_confirmacion"])).click()
-        time.sleep(0.5) # Pequeña pausa para que la ventana de confirmación se cierre
+        confirm_wait = WebDriverWait(driver, 3)
+        aceptar_btn = confirm_wait.until(EC.element_to_be_clickable(SELECTORES["btn_aceptar_confirmacion"]))
+        aceptar_btn.click()
+        confirm_wait.until(EC.staleness_of(aceptar_btn))
         print("         ✅ Confirmación de cierre aceptada.")
     except:
         print("         ℹ️ No se detectó ventana de confirmación de cierre o no fue necesaria.")
-        pass
     
-    time.sleep(.8) # Pausa para asegurar que todo se cerró antes de reabrir
+    # Esperar que el modal principal se haya cerrado (btn_cerrar_ventana invisible)
+    try:
+        wait.until(EC.invisibility_of_element_located(SELECTORES["btn_cerrar_ventana"]))
+    except:
+        pass
+        
     click_seguro(driver, SELECTORES["btn_alta"])
-    time.sleep(.8) # Pausa para que el formulario de alta cargue completamente
+    
+    # Esperar a que el formulario cargue
+    wait.until(EC.presence_of_element_located(SELECTORES["fecha"]))
     print("         ✅ Formulario de alta reabierto.")
 
 def inicializar_log_selenium():
@@ -275,35 +282,34 @@ def registrar_log_selenium(cabecera_data, estado, motivo, diferencia="0.00"):
 def login(driver):
     print("🔑 Logueando...")
     driver.get(URL_LOGIN)
-    time.sleep(1.5)
-    if len(driver.find_elements(*SELECTORES["login_user"])) > 0:
-        driver.find_element(*SELECTORES["login_user"]).send_keys(USUARIO)
+    wait = WebDriverWait(driver, 10)
+    try:
+        user_input = wait.until(EC.presence_of_element_located(SELECTORES["login_user"]))
+        user_input.send_keys(USUARIO)
         driver.find_element(*SELECTORES["login_pass"]).send_keys(PASSWORD)
         driver.find_element(*SELECTORES["login_btn"]).click()
-        time.sleep(1.5)
-    else:
-        print("   ✅ Ya estabas logueado.")
+        wait.until(EC.presence_of_element_located(SELECTORES["tab_compras"]))
+    except:
+        if len(driver.find_elements(*SELECTORES["login_user"])) == 0:
+            print("   ✅ Ya estabas logueado.")
+        else:
+            raise Exception("No se pudo iniciar sesión ni verificar estado logueado.")
 
 def navegar_una_sola_vez(driver):
     """Navega al formulario de alta UNA VEZ al principio."""
     wait = WebDriverWait(driver, 10)
     print("📍 Navegando al formulario inicial...")
     
-    # Click Pestaña
     try:
         wait.until(EC.element_to_be_clickable(SELECTORES["tab_compras"])).click()
     except:
         driver.execute_script("document.querySelector(\"a[rel='pv_compras']\").click();")
     
-    time.sleep(1.5)
-
-    # Click Botón Alta
     try:
         wait.until(EC.element_to_be_clickable(SELECTORES["btn_alta"])).click()
     except:
         driver.execute_script("document.querySelector(\"a[rel='alta']\").click();")
 
-    # Esperar carga
     wait.until(EC.presence_of_element_located(SELECTORES["fecha"]))
     print("✅ Formulario listo. Iniciando bucle de carga...")
 
@@ -385,7 +391,7 @@ def procesar_lote(driver):
             Select(driver.find_element(*SELECTORES["select_letra"])).select_by_value(val_letra)
 
             # Pausa para asegurar que el cambio de tipo de comprobante no resetee el campo de stock
-            time.sleep(1)
+            time.sleep(0.5)
 
             # Control de Stock (NC Financieras vs Devolución Mercadería)
             mueve_stock = cab.get("mueve_stock", True)
@@ -416,7 +422,6 @@ def procesar_lote(driver):
                 else:
                     # CASO: Encontrado y vinculado
                     nombre_prod_cian = res_prod.split("|", 1)[1] if "|" in res_prod else "S/D"
-                    # print(f"      ✅ Vinculado: {nombre_prod_cian}")
                     if nombre_prod_cian != prod['codigo']:
                         registrar_log_selenium(cab, "PRODUCTO_OK", f"Código PDF: {prod['codigo']} -> Cianbox: {nombre_prod_cian}")
 
@@ -428,27 +433,29 @@ def procesar_lote(driver):
                 # 3. Agregar
                 driver.find_element(*SELECTORES["btn_add"]).click()
 
-                # Esperar que baje a la tabla (buscando el botón de borrar del renglón o pausa simple)
-                time.sleep(0.8)
+                # Esperar a que se añada el producto (por ejemplo, que el input visual se vacíe al agregarse)
+                try:
+                    WebDriverWait(driver, 3).until(
+                        lambda d: d.find_element(By.CSS_SELECTOR, ".box_main_field").get_attribute("value") == ""
+                    )
+                except:
+                    time.sleep(0.5)
 
             # --- DETECCIÓN DE DUPLICADOS ---
             # Lo hago después de la carga de productos para darle tiempo al AJAX de Cianbox para validar
-            try:
-                div_dup = driver.find_element(By.ID, "mb_duplicated")
-                if div_dup.is_displayed():
-                    texto_error = div_dup.text.replace("\n", " ").strip()
-                    print(f"   ⛔ DUPLICADA: {texto_error}")
-                    registrar_log_selenium(cab, "DUPLICADO", texto_error)
-                    reiniciar_modal(driver)
-                    continue
-            except:
-                pass # El elemento no existe o no es visible, continuamos
+            div_dup = driver.find_elements(By.ID, "mb_duplicated")
+            if div_dup and div_dup[0].is_displayed():
+                texto_error = div_dup[0].text.replace("\n", " ").strip()
+                print(f"   ⛔ DUPLICADA: {texto_error}")
+                registrar_log_selenium(cab, "DUPLICADO", texto_error)
+                reiniciar_modal(driver)
+                continue
 
             # PERCEPCIONES (Versión Reforzada)
             if cab.get("percepciones_iibb"):
                 print("   ⚖️ Entrando a pestaña Percepciones...")
                 click_seguro(driver, SELECTORES["tab_percepciones"])
-                time.sleep(0.8) # Espera a que la pestaña se active visualmente
+                wait.until(EC.element_to_be_clickable(SELECTORES["select_provincia"]))
 
                 for perc in cab["percepciones_iibb"]:
                     jurisdiccion = perc["jurisdiccion"]
@@ -468,44 +475,78 @@ def procesar_lote(driver):
                     campo_monto.send_keys(monto_limpio)
                     
                     # 4. Click en Agregar (el "+" de percepciones)
-                    # Si el ID no es 'add_impuesto', suele ser el botón que está al lado del input de monto
                     try:
                         driver.find_element(*SELECTORES["btn_add_percepcion"]).click()
                     except:
-                        # Fallback: a veces el botón se llama igual que el de productos o similar
                         driver.execute_script("document.getElementById('add_impuesto').click();")
-                    time.sleep(0.1)
+                    
+                    # Esperar a que el campo de monto de percepción se limpie
+                    try:
+                        WebDriverWait(driver, 2).until(
+                            lambda d: d.find_element(*SELECTORES["monto_percepcion"]).get_attribute("value") == ""
+                        )
+                    except:
+                        time.sleep(0.2)
 
                 print(f"      ✅ Item de IIBB agregado.")
-                time.sleep(0.4) # Pausa para que el renglón aparezca en la lista
+
             # E. GUARDAR Y PREPARAR SIGUIENTE
+            old_fecha_el = driver.find_element(*SELECTORES["fecha"])
             print("💾 Guardando...")
             driver.find_element(*SELECTORES["guardar"]).click()
             
-            # --- DETECCIÓN ERROR AL GUARDAR (Faltan campos) ---
-            time.sleep(1)
+            # Esperar brevemente por errores o duplicados
             try:
-                ntf = driver.find_element(*SELECTORES["notificacion_error"])
-                if ntf.is_displayed() and "Faltan campos" in ntf.text:
-                    print("   ❌ ERROR AL GUARDAR: Faltan campos requeridos.")
-                    registrar_log_selenium(cab, "ERROR_GUARDADO", "Faltan campos requeridos al intentar guardar.")
-                    reiniciar_modal(driver)
-                    continue
+                WebDriverWait(driver, 1.5).until(
+                    lambda d: len(d.find_elements(By.ID, "mb_duplicated")) > 0 or len(d.find_elements(*SELECTORES["notificacion_error"])) > 0
+                )
+            except:
+                pass
+
+            # Chequeo duplicado después de guardar
+            div_dup = driver.find_elements(By.ID, "mb_duplicated")
+            if div_dup and div_dup[0].is_displayed():
+                texto_error = div_dup[0].text.replace("\n", " ").strip()
+                print(f"   ⛔ DUPLICADA: {texto_error}")
+                registrar_log_selenium(cab, "DUPLICADO", texto_error)
+                reiniciar_modal(driver)
+                continue
+
+            # Chequeo error al guardar (Faltan campos)
+            ntf = driver.find_elements(*SELECTORES["notificacion_error"])
+            if ntf and ntf[0].is_displayed() and "Faltan campos" in ntf[0].text:
+                print("   ❌ ERROR AL GUARDAR: Faltan campos requeridos.")
+                registrar_log_selenium(cab, "ERROR_GUARDADO", "Faltan campos requeridos al intentar guardar.")
+                reiniciar_modal(driver)
+                continue
+            
+            # Esperar recarga del formulario
+            print("   ⏳ Esperando confirmación de guardado...")
+            try:
+                wait.until(EC.staleness_of(old_fecha_el))
             except:
                 pass
             
-            # ESPERA CRÍTICA:
-            time.sleep(3) 
+            # Esperar el nuevo formulario limpio
             wait.until(EC.presence_of_element_located(SELECTORES["fecha"]))
+            wait.until(lambda d: d.find_element(*SELECTORES["numero"]).get_attribute("value") == "")
             print("✅ Guardado. Formulario listo para la siguiente.")
             registrar_log_selenium(cab, "CARGA_EXITOSA", "Carga confirmada en Cianbox")
 
         except Exception as e:
             print(f"🔥 Error en factura {cab['numero']}: {e}")
             registrar_log_selenium(cab, "ERROR_SELENIUM", str(e))
-            # Si falla, quizás quedó a mitad de camino. 
-            # Podrías intentar recargar la página: driver.refresh()
-            time.sleep(3)
+            # Intentar recuperación cerrando modal/reiniciando formulario
+            try:
+                reiniciar_modal(driver)
+            except Exception as reset_error:
+                print(f"      ⚠️ No se pudo reiniciar el modal tras el error: {reset_error}")
+                try:
+                    driver.refresh()
+                    time.sleep(2)
+                    navegar_una_sola_vez(driver)
+                except:
+                    pass
 
 if __name__ == "__main__":
     driver = iniciar_driver()

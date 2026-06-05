@@ -4,60 +4,11 @@ import json
 import os
 
 # --- CONFIGURACIÓN ---
-ARCHIVO_PDF = "comprobante-Cromosol-0018-00143157.pdf"
+ARCHIVO_PDF = "comprobante-CRO-143157.pdf"
 TOLERANCIA = 0.09  # Tolerancia para diferencias aceptables
 
-def str_to_float(precio_str):
-    """Convierte '1.500,50' a float 1500.50"""
-    if not precio_str: return 0.0
-    # Limpiar cualquier caracter que no sea número o coma
-    clean = re.sub(r'[^\d,]', '', precio_str)
-    # Eliminar puntos de miles si quedaron (aunque el regex anterior ya los sacaría si no son dígitos)
-    clean = clean.replace('.', '')
-    try:
-        return float(clean.replace(',', '.'))
-    except ValueError:
-        return 0.0
+from procesador_batch import str_to_float, float_to_str, extraer_valor_por_columna
 
-def float_to_str(valor_float):
-    """Convierte float a string '1.500,50'"""
-    # Usamos format para asegurar 2 decimales fijos
-    return "{:,.2f}".format(valor_float).replace(",", "X").replace(".", ",").replace("X", ".")
-
-def extraer_valor_por_columna(words, palabra_clave, margen_vertical=60):
-    """Busca palabra clave y devuelve el valor numérico debajo."""
-    # Buscamos la ocurrencia más abajo en la página (Pie de página)
-    candidatos = [w for w in words if palabra_clave in w['text']]
-    if not candidatos: return "0,00", ""
-    
-    header = candidatos[-1] # El último encontrado
-    
-    # Rango horizontal (Ancho de columna)
-    x_min = header['x0'] - 25
-    x_max = header['x1'] + 25
-    
-    # Rango vertical (Hacia abajo)
-    y_min = header['bottom']
-    y_max = header['bottom'] + margen_vertical
-    
-    valores = []
-    for w in words:
-        mid_x = (w['x0'] + w['x1']) / 2
-        if x_min < mid_x < x_max and y_min < w['top'] < y_max:
-            # Regex estricto para moneda: digitos, coma, 2 digitos
-            if re.search(r'\d+,\d{2}', w['text']):
-                valores.append(w['text'])
-    
-    valor_final = valores[0] if valores else "0,00"
-
-    # Contexto a la derecha (para identificar jurisdicción de IIBB)
-    palabras_derecha = [w['text'] for w in words 
-                        if abs(w['top'] - header['top']) < 4 
-                        and w['x0'] > header['x1']]
-    
-    contexto = " ".join(palabras_derecha).split("TOTAL")[0].strip()
-    
-    return valor_final, contexto
 
 def procesar_factura_estricta(ruta_pdf):
     print(f"🚀 Procesando (Modo Estricto): {os.path.basename(ruta_pdf)}")
