@@ -1,0 +1,3 @@
+# Ignorar logs de auditoría generados por el procesador
+logs/audit_log.csv
+lote_cianbox.json

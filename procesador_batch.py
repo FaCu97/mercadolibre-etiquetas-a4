@@ -245,8 +245,8 @@ def parsear_cromosol(page, full_text, ruta_pdf):
             mueve_stock = True
             # --- REGLA DE NEGOCIO: NC CROMOSOL (STOCK) ---
             if tipo == "NOTA DE CREDITO":
-                # Si NO tiene el patrón "N/C S/F Nro: ..., RCL ...", asumimos que es financiera y no debe afectar stock.
-                if not re.search(r'N/C S/F Nro:?\s*[\d\.]+,?\s*RCL\s*[\d\.]+', full_text, re.IGNORECASE):
+                # Si es una bonificación por volumen o por oferta (descuento comercial), NO mueve stock
+                if re.search(r'POR:\s*(VOLUMEN|OFERTA)|(VOLUMEN|OFERTA)\s*ID', full_text, re.IGNORECASE):
                     mueve_stock = False
 
             letra = "X"

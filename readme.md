@@ -17,9 +17,16 @@ Clasificación Automática: Mueve los archivos a carpetas de "Éxito" o "Error" 
 Auditoría: Genera un log CSV detallado con el motivo de cada fallo.
 
 🏗️ Arquitectura del Sistema
+
+### Componentes Principales
+*   **Procesador de Facturas ([procesador_batch.py](file:///Users/fdelaplata/Documents/automatizacion-facturas/procesador_batch.py))**: Extrae información y valida matemáticamente los archivos PDF de facturas.
+*   **Descargador de Correo ([descarga_mail.py](file:///Users/fdelaplata/Documents/automatizacion-facturas/descarga_mail.py))**: Automatiza la descarga de comprobantes desde el correo electrónico. Ver detalles completos en su respectivo [README de Descarga de Correo](file:///Users/fdelaplata/Documents/automatizacion-facturas/README_descarga.md).
+*   **Cargador Selenium ([cargador_selenium.py](file:///Users/fdelaplata/Documents/automatizacion-facturas/cargador_selenium.py))**: Automatización mediante navegador para cargar comprobantes en Cianbox de forma desatendida.
+*   **Interfaz Script de Tampermonkey ([cianbox.js](file:///Users/fdelaplata/Documents/automatizacion-facturas/cianbox.js))**: Panel flotante integrado en el portal de Cianbox para pegado y carga rápida por lotes.
+
 El sistema sigue un patrón de Tubería de Procesamiento (Pipeline) basado en el estado de los archivos.
 
-Estructura de Carpetas
+## Estructura de Carpetas
 El script genera y gestiona automáticamente la siguiente estructura:
 
 Plaintext

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Importador Automático - Cianbox
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  Inyección y automatización masiva de facturas desde JSON en Cianbox
 // @author       Antigravity
 // @match        *://*.cianbox.org/equipstore/*
@@ -326,6 +326,11 @@
                 await new Promise(r => setTimeout(r, 600)); // Pausa breve entre items
             }
 
+            // 2.5. Cargar Percepciones
+            if (factura.cabecera.percepciones_iibb && factura.cabecera.percepciones_iibb.length > 0) {
+                await cargarPercepciones(factura.cabecera.percepciones_iibb);
+            }
+
             // 3. Quitar de la cola
             cola.shift();
             localStorage.setItem(STORAGE_KEY, JSON.stringify(cola));
@@ -368,6 +373,35 @@
         
         let inputNum = document.querySelector('input[name="numero"]');
         if (inputNum) inputNum.value = datos.numero;
+
+        // Select Tipo de Comprobante
+        const MAPEO_COMPROBANTES = { "FACTURA": "1", "NOTA DE CREDITO": "5", "NOTA DE DEBITO": "6", "REMITO": "7" };
+        let selectTipo = document.querySelector('select[name="id_comprobante"]');
+        if (selectTipo && datos.tipo) {
+            const valTipo = MAPEO_COMPROBANTES[datos.tipo.toUpperCase()] || "1";
+            selectTipo.value = valTipo;
+            selectTipo.dispatchEvent(new Event('change', { bubbles: true }));
+            log(`📋 Tipo Comprobante seleccionado: ${datos.tipo} (ID ${valTipo})`);
+        }
+
+        // Select Letra
+        const MAPEO_LETRAS = { "A": "1", "B": "2", "C": "3", "M": "4", "E": "8" };
+        let selectLetra = document.querySelector('select[name="id_tipo"]');
+        if (selectLetra && datos.letra) {
+            const valLetra = MAPEO_LETRAS[datos.letra.toUpperCase()] || "1";
+            selectLetra.value = valLetra;
+            selectLetra.dispatchEvent(new Event('change', { bubbles: true }));
+            log(`📋 Letra seleccionada: ${datos.letra} (ID ${valLetra})`);
+        }
+
+        // Control de Stock
+        let selectStock = document.querySelector('select[name="recibida"]');
+        if (selectStock) {
+            const mueveStock = datos.mueve_stock !== false;
+            selectStock.value = mueveStock ? "toda_sr" : "no_stock";
+            selectStock.dispatchEvent(new Event('change', { bubbles: true }));
+            log(`📦 Control de Stock: ${mueveStock ? 'MUEVE STOCK (toda_sr)' : 'NO MUEVE STOCK (no_stock)'}`);
+        }
 
         // Búsqueda de proveedor vía AJAX
         const queryProv = datos.proveedor;
@@ -460,6 +494,49 @@
         await new Promise(r => setTimeout(r, 100));
         let btnAdd = document.getElementById('add_producto');
         if (btnAdd) btnAdd.click();
+    }
+
+    async function cargarPercepciones(percepciones) {
+        log("⚖️ Cargando Percepciones...");
+        
+        const tab = document.querySelector("a[rel='percepcion']");
+        if (tab) {
+            tab.click();
+            await new Promise(r => setTimeout(r, 600));
+        } else {
+            log("❌ No se encontró la pestaña de Percepciones.", "error");
+            return;
+        }
+
+        const MAPEO_PROVINCIAS = {
+            "Capital Federal": "2", "Ciudad de Buenos Aires": "2", "C.A.B.A.": "2",
+            "Santa Fe": "3", "Córdoba": "4", "Tucuman": "6", "Misiones": "7",
+            "Corrientes": "9", "Mendoza": "12", "Buenos Aires": "23", "Provincia de Buenos Aires": "23"
+        };
+
+        for (const perc of percepciones) {
+            const idProv = MAPEO_PROVINCIAS[perc.jurisdiccion] || "23";
+            log(`📍 Cargando percepción IIBB ${perc.jurisdiccion} (ID ${idProv}): $${perc.monto}`);
+
+            let selectProv = document.querySelector('select[name="add_percepcion"]');
+            if (selectProv) {
+                selectProv.value = idProv;
+                selectProv.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            let inputMonto = document.querySelector('input[name="add_monto"]');
+            if (inputMonto) {
+                inputMonto.value = perc.monto.replace(/\./g, "");
+                inputMonto.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            await new Promise(r => setTimeout(r, 200));
+            
+            let btnAdd = document.getElementById('add_impuesto');
+            if (btnAdd) btnAdd.click();
+            
+            await new Promise(r => setTimeout(r, 500));
+        }
     }
 
     // =============================================================================
