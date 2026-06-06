@@ -13,42 +13,39 @@ EMAIL_PASS = os.getenv("EMAIL_PASS")
 EMAIL_SERVER = os.getenv("EMAIL_SERVER")
 EMAIL_FOLDER = os.getenv("EMAIL_FOLDER")
 
-# Validar credenciales, servidor y carpeta
-if not EMAIL_USER or not EMAIL_PASS or not EMAIL_SERVER or not EMAIL_FOLDER:
-    print("❌ Error: Debes configurar EMAIL_USER, EMAIL_PASS, EMAIL_SERVER y EMAIL_FOLDER en el archivo .env")
+# Validar credenciales, servidor y carpeta indicando exactamente cuál falta
+faltantes = []
+if not EMAIL_USER:
+    faltantes.append("EMAIL_USER")
+if not EMAIL_PASS:
+    faltantes.append("EMAIL_PASS")
+if not EMAIL_SERVER:
+    faltantes.append("EMAIL_SERVER")
+if not EMAIL_FOLDER:
+    faltantes.append("EMAIL_FOLDER")
+
+if faltantes:
+    print(f"❌ Error: Faltan definir o están vacías las siguientes variables en tu archivo .env: {', '.join(faltantes)}")
     sys.exit(1)
 
 # Configurar argumentos de línea de comandos para las fechas
 parser = argparse.ArgumentParser(
     description="Descarga facturas PDF desde el servidor de correo Cromosol.",
-    usage="python descarga_mail.py [-d YYYY-MM-DD] [-t YYYY-MM-DD]"
+    usage="python descarga_mail.py -d YYYY-MM-DD [-t YYYY-MM-DD]"
 )
-parser.add_argument("--desde", "-d", help="Fecha inicial en formato YYYY-MM-DD (por defecto: hace 7 días)")
-parser.add_argument("--hasta", "-t", help="Fecha final en formato YYYY-MM-DD (por defecto: hoy)")
+parser.add_argument("--desde", "-d", required=True, help="Fecha inicial en formato YYYY-MM-DD (Requerido)")
+parser.add_argument("--hasta", "-t", required=False, help="Fecha final en formato YYYY-MM-DD (Opcional, por defecto: hoy)")
 args = parser.parse_args()
 
-# Si se ejecuta sin argumentos, mostrar cómo se usa el script para parametrizar fechas
-if len(sys.argv) == 1:
-    print("ℹ️  Modo de uso:")
-    print("   python descarga_mail.py --desde YYYY-MM-DD --hasta YYYY-MM-DD")
-    print("   python descarga_mail.py -d YYYY-MM-DD -t YYYY-MM-DD")
-    print("💡 Ejecutando ahora con el rango por defecto (últimos 7 días hasta hoy)...")
-    print("-" * 60)
-
 try:
-    if args.desde:
-        fecha_desde = datetime.datetime.strptime(args.desde.strip(), "%Y-%m-%d").date()
-    else:
-        # Por defecto, desde hace 7 días
-        fecha_desde = (datetime.date.today() - datetime.timedelta(days=7))
-        print(f"ℹ️ Fecha inicial (--desde) no especificada. Usando defecto: {fecha_desde}")
+    fecha_desde = datetime.datetime.strptime(args.desde.strip(), "%Y-%m-%d").date()
 
     if args.hasta:
         fecha_hasta = datetime.datetime.strptime(args.hasta.strip(), "%Y-%m-%d").date()
     else:
         # Por defecto, hasta hoy
         fecha_hasta = datetime.date.today()
-        print(f"ℹ️ Fecha final (--hasta) no especificada. Usando defecto: {fecha_hasta}")
+        print(f"ℹ️ Fecha final (--hasta) no especificada. Usando por defecto: {fecha_hasta}")
 except ValueError as e:
     print(f"\n❌ Error al parsear fechas de los argumentos (formato esperado: YYYY-MM-DD): {e}")
     print("\nModo de uso correcto:")

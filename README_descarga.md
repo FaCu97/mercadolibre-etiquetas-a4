@@ -32,16 +32,20 @@ EMAIL_PASS=tu_contraseña
 EMAIL_FOLDER="INBOX.Facturas.Facturas cromosol"
 ```
 
----
-
 ## 🚀 Modo de Uso y Parámetros
 
-El script permite filtrar los correos descargados por un rango de fechas. Las fechas se pasan como argumentos de línea de comandos en formato `YYYY-MM-DD`.
+El script filtra los correos descargados por un rango de fechas. Las fechas se pasan como argumentos de línea de comandos en formato `YYYY-MM-DD`. 
 
-### 1. Ejecución por defecto (Sin parámetros)
-Si ejecutas el script sin especificar parámetros, descargará los correos de los **últimos 7 días** hasta el día de **hoy** (inclusive). Además, te mostrará un recordatorio de cómo usar los parámetros:
+**La fecha inicial (`--desde` o `-d`) es un parámetro obligatorio.**
+
+### 1. Ejecución Básica (Solo fecha inicial)
+Si ejecutas el script especificando únicamente la fecha inicial, buscará correos desde esa fecha hasta el día de **hoy** (inclusive):
 ```bash
-venv/bin/python descarga_mail.py
+venv/bin/python descarga_mail.py --desde 2026-05-20
+```
+O usando el atajo corto:
+```bash
+venv/bin/python descarga_mail.py -d 2026-05-20
 ```
 
 ### 2. Ejecución con rango de fechas completo
@@ -49,21 +53,18 @@ Para buscar correos entre dos fechas específicas (por ejemplo, del 1 al 15 de m
 ```bash
 venv/bin/python descarga_mail.py --desde 2026-05-01 --hasta 2026-05-15
 ```
-
-O usando los atajos cortos:
+O de forma abreviada:
 ```bash
 venv/bin/python descarga_mail.py -d 2026-05-01 -t 2026-05-15
 ```
 
-### 3. Ejecución especificando solo fecha inicial o final
-* Descargar correos desde el 20 de mayo de 2026 hasta hoy:
-  ```bash
-  venv/bin/python descarga_mail.py --desde 2026-05-20
-  ```
-* Descargar correos de los últimos 7 días hasta el 10 de mayo de 2026:
-  ```bash
-  venv/bin/python descarga_mail.py --hasta 2026-05-10
-  ```
+### 3. Ejecución incorrecta o sin parámetros
+Si ejecutas el script sin pasar la fecha inicial requerida, el programa mostrará las instrucciones de uso en pantalla y saldrá inmediatamente sin realizar ninguna descarga:
+```bash
+$ venv/bin/python descarga_mail.py
+usage: python descarga_mail.py -d YYYY-MM-DD [-t YYYY-MM-DD]
+descarga_mail.py: error: the following arguments are required: --desde/-d
+```
 
 ---
 

@@ -435,6 +435,29 @@
         }
     }
 
+    function obtenerPalabrasClave(texto) {
+        if (!texto) return [];
+        return texto.toUpperCase()
+            .replace(/[^A-Z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length > 2);
+    }
+
+    function calcularSimilitudPalabras(pdfDesc, cianDesc) {
+        const palabrasPdf = obtenerPalabrasClave(pdfDesc);
+        const palabrasCian = obtenerPalabrasClave(cianDesc);
+        
+        if (palabrasPdf.length === 0) return 1.0;
+        
+        let overlap = 0;
+        for (const p of palabrasPdf) {
+            if (palabrasCian.includes(p)) {
+                overlap++;
+            }
+        }
+        return overlap / palabrasPdf.length;
+    }
+
     async function cargarProducto(datos, index, total) {
         log(`Cargando item ${index}/${total} [Cód: ${datos.codigo}]...`);
         
@@ -446,17 +469,47 @@
         });
         
         const html = await response.text();
-        let data = null;
-        const match = html.match(/rel="([^"]+)"/) || html.match(/rel='([^']+)'/);
-        if (match && match[1]) {
-            try { data = JSON.parse(match[1].replace(/&quot;/g, '"')); } catch(e){}
+        
+        // Parsear el HTML retornado para buscar una coincidencia exacta de código
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        const filas = div.querySelectorAll('tr[rel]');
+        
+        let encontrado = null;
+        const codigoNorm = datos.codigo.trim().toUpperCase();
+        
+        for (let i = 0; i < filas.length; i++) {
+            try {
+                const jsonRaw = filas[i].getAttribute('rel').replace(/&quot;/g, '"');
+                const pData = JSON.parse(jsonRaw);
+                const desc = (pData.desc || "").toUpperCase();
+                const codInterno = (pData.adicional && pData.adicional.codigo_interno) ? pData.adicional.codigo_interno.toString().toUpperCase() : "";
+                
+                // CRITERIOS DE COINCIDENCIA EXACTA (idénticos a Selenium):
+                // 1. El código está entre corchetes en la descripción: "[CODIGO]"
+                // 2. Coincidencia exacta con el código interno
+                if (desc.includes("[" + codigoNorm + "]") || codInterno === codigoNorm) {
+                    encontrado = pData;
+                    break;
+                }
+            } catch(e) {}
         }
         
-        let idFinal = data ? data.id : "0";
-        let nombreFinal = data ? data.nombre : datos.codigo;
+        let idFinal = encontrado ? encontrado.id : "0";
+        let nombreFinal = encontrado ? (encontrado.nombre || datos.codigo) : datos.codigo;
 
         if (idFinal === "0") {
             log(`⚠️ Cód. "${datos.codigo}" no coincide exacto. Se inyecta como texto genérico.`, 'warn');
+        } else {
+            // Validar similitud de descripción para detectar choques de códigos cortos / EANs
+            const descCian = encontrado.desc || "";
+            const similitud = calcularSimilitudPalabras(datos.descripcion, descCian || nombreFinal);
+            
+            if (similitud === 0) {
+                log(`🚨 SOSPECHOSO: Código "${datos.codigo}" vinculado en Cianbox, pero las descripciones no coinciden. PDF: "${datos.descripcion}" vs Cianbox: "${nombreFinal} | ${descCian}".`, 'warn');
+            } else if (nombreFinal !== datos.codigo) {
+                log(`✅ Vinculado código PDF: ${datos.codigo} -> Cianbox: ${nombreFinal}`);
+            }
         }
 
         // Llenar inputs de productos

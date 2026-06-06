@@ -103,7 +103,8 @@ JS_BUSCAR_PRODUCTO = """
                 inputNombre.value = nombreFinal; 
                 inputNombre.dispatchEvent(new Event('input', { bubbles: true }));
             }
-            callback("OK|" + nombreFinal);
+            var descLimpia = (encontrado.desc || "").replace(/\\|/g, " ");
+            callback("OK|" + nombreFinal + "|" + descLimpia);
         } else { 
             // Si no se encuentra coincidencia exacta, limpiamos el ID para evitar asociaciones erróneas
             var inputId = document.querySelector('input[name="add_id_producto"]');
@@ -263,6 +264,25 @@ def inicializar_log_selenium():
                 writer = csv.writer(f)
                 writer.writerow(["Fecha", "Archivo", "Proveedor", "Tipo", "Numero", "Estado", "Motivo", "Diferencia"])
 
+def calcular_similitud_palabras(pdf_desc, cian_desc):
+    """Calcula el porcentaje de palabras clave del PDF que coinciden con las de Cianbox."""
+    def obtener_palabras(texto):
+        if not texto:
+            return set()
+        # Limpiar texto: caracteres alfanuméricos en mayúsculas
+        limpio = "".join(c if c.isalnum() or c.isspace() else " " for c in texto.upper())
+        # Quedarse con palabras significativas de más de 2 caracteres
+        return {w for w in limpio.split() if len(w) > 2}
+
+    palabras_pdf = obtener_palabras(pdf_desc)
+    palabras_cian = obtener_palabras(cian_desc)
+    
+    if not palabras_pdf:
+        return 1.0  # Sin descripción en el PDF, no contrastamos
+        
+    coincidencias = palabras_pdf.intersection(palabras_cian)
+    return len(coincidencias) / len(palabras_pdf)
+
 def registrar_log_selenium(cabecera_data, estado, motivo, diferencia="0.00"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     archivo_ref = f"Selenium_Carga_{cabecera_data.get('proveedor', 'N/A')}_{cabecera_data.get('numero', 'N/A')}"
@@ -421,8 +441,18 @@ def procesar_lote(driver):
                     
                 else:
                     # CASO: Encontrado y vinculado
-                    nombre_prod_cian = res_prod.split("|", 1)[1] if "|" in res_prod else "S/D"
-                    if nombre_prod_cian != prod['codigo']:
+                    parts = res_prod.split("|")
+                    nombre_prod_cian = parts[1] if len(parts) > 1 else "S/D"
+                    desc_prod_cian = parts[2] if len(parts) > 2 else ""
+                    
+                    # Calcular similitud de descripción para alertar discrepancias de código (ej. choques de EANs o códigos cortos)
+                    similitud = calcular_similitud_palabras(prod["descripcion"], desc_prod_cian or nombre_prod_cian)
+                    if similitud == 0.0:
+                        print(f"   ⚠️ ALERTA: Coincidencia dudosa para código {prod['codigo']}.")
+                        print(f"      PDF: '{prod['descripcion']}'")
+                        print(f"      Cianbox: '{nombre_prod_cian} {desc_prod_cian}'")
+                        registrar_log_selenium(cab, "PRODUCTO_SOSPECHOSO", f"PDF: {prod['codigo']} ({prod['descripcion']}) -> Cianbox: {nombre_prod_cian} {desc_prod_cian} (0% coincidencia palabras)")
+                    elif nombre_prod_cian != prod['codigo']:
                         registrar_log_selenium(cab, "PRODUCTO_OK", f"Código PDF: {prod['codigo']} -> Cianbox: {nombre_prod_cian}")
 
                 # 2. Cantidad y Precio
