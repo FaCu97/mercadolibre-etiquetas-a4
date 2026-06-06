@@ -289,6 +289,12 @@
         const activo = localStorage.getItem(RUNNING_KEY) === 'true';
         if (!activo) return;
 
+        // --- VERIFICAR Y CAMBIAR SUCURSAL ANTES DE EMPEZAR ---
+        const sucursalCorrecta = await asegurarSucursalWarnes();
+        if (!sucursalCorrecta) {
+            return; // Detiene el ciclo actual (la página se recargará)
+        }
+
         let cola = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         if (cola.length === 0) {
             log("✨ Proceso terminado. No quedan facturas en la cola.", 'info');
@@ -355,6 +361,95 @@
             localStorage.setItem(RUNNING_KEY, 'false');
             document.getElementById('imp-status').textContent = 'PAUSADO POR ERROR';
             document.getElementById('imp-status').style.color = '#f87171';
+        }
+    }
+
+    async function asegurarSucursalWarnes() {
+        const todos = document.querySelectorAll('a, span, div, strong');
+        let headerWarnes = false;
+        for (let el of todos) {
+            const rect = el.getBoundingClientRect();
+            if (rect.top >= 0 && rect.top < 100 && rect.right > window.innerWidth - 350 && rect.width > 0 && rect.height > 0) {
+                const txt = (el.innerText || "").trim().toUpperCase();
+                if (txt.includes("AV. WARNES 1318") || txt.includes("WARNES 1318")) {
+                    headerWarnes = true;
+                    break;
+                }
+            }
+        }
+
+        if (headerWarnes) {
+            return true;
+        }
+
+        log("🏢 Sucursal incorrecta o no detectada. Cambiando a AV. WARNES 1318...");
+
+        // 2. Hacer clic en el selector de sucursal en el header
+        let selectorSucursal = null;
+        for (let el of todos) {
+            const rect = el.getBoundingClientRect();
+            if (rect.top >= 0 && rect.top < 100 && rect.right > window.innerWidth - 350 && rect.width > 0 && rect.height > 0) {
+                const txt = (el.innerText || "").trim().toUpperCase();
+                if (txt.includes("WARNES") || txt.includes("CENTRAL") || txt.includes("SUCURSAL") || txt.includes("DEPOSITO") || txt.includes("LOCAL")) {
+                    selectorSucursal = el;
+                    break;
+                }
+            }
+        }
+
+        if (!selectorSucursal) {
+            log("❌ No se encontró el selector de sucursal en el header.", "error");
+            return false;
+        }
+
+        selectorSucursal.click();
+        await new Promise(r => setTimeout(r, 1500)); // Esperar a que el modal cargue
+
+        // 3. Seleccionar Warnes en el modal
+        const elementos = Array.from(document.querySelectorAll('option, label, input, a, td, span'));
+        let found = false;
+        for (let el of elementos) {
+            const txt = (el.textContent || el.innerText || el.value || "").trim().toUpperCase();
+            if (txt.includes("WARNES 1318") || txt.includes("AV. WARNES") || txt.includes("WARNES")) {
+                if (el.tagName === 'OPTION') {
+                    el.selected = true;
+                    el.parentElement.dispatchEvent(new Event('change', { bubbles: true }));
+                    found = true;
+                } else if (el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox')) {
+                    el.click();
+                    found = true;
+                } else {
+                    el.click();
+                    const inputRel = el.querySelector('input') || (el.htmlFor ? document.getElementById(el.htmlFor) : null);
+                    if (inputRel) inputRel.click();
+                    found = true;
+                }
+            }
+        }
+
+        if (!found) {
+            log("❌ No se encontró la opción de AV. WARNES 1318 en el modal.", "error");
+            return false;
+        }
+
+        // 4. Click en Aceptar en el modal
+        const botones = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.accept, a.btn, .button'));
+        let btnAceptar = null;
+        for (let btn of botones) {
+            const txt = (btn.textContent || btn.value || "").trim().toUpperCase();
+            if (txt === "ACEPTAR" || txt.includes("ACEPTAR") || txt.includes("SAVE") || txt.includes("GUARDAR")) {
+                btnAceptar = btn;
+                break;
+            }
+        }
+
+        if (btnAceptar) {
+            log("🏢 Sucursal seleccionada en modal. Guardando y recargando página...");
+            btnAceptar.click();
+            return false; // Retornar false para que el ciclo se detenga y se reanude tras recargar la página
+        } else {
+            log("❌ No se encontró el botón de Aceptar en el modal de sucursales.", "error");
+            return false;
         }
     }
 
@@ -506,7 +601,8 @@
             const similitud = calcularSimilitudPalabras(datos.descripcion, descCian || nombreFinal);
             
             if (similitud === 0) {
-                log(`🚨 SOSPECHOSO: Código "${datos.codigo}" vinculado en Cianbox, pero las descripciones no coinciden. PDF: "${datos.descripcion}" vs Cianbox: "${nombreFinal} | ${descCian}".`, 'warn');
+                log(`🚨 SOSPECHOSO: Código "${datos.codigo}" vinculado en Cianbox, pero las descripciones no coinciden. PDF: "${datos.descripcion}" vs Cianbox: "${nombreFinal} | ${descCian}".`, 'error');
+                throw new Error(`Producto sospechoso para código "${datos.codigo}" (0% similitud)`);
             } else if (nombreFinal !== datos.codigo) {
                 log(`✅ Vinculado código PDF: ${datos.codigo} -> Cianbox: ${nombreFinal}`);
             }

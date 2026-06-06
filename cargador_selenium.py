@@ -20,6 +20,8 @@ URL_LOGIN = os.getenv("URL_LOGIN")
 ARCHIVO_JSON = "lote_cianbox.json"
 CARPETA_BASE = os.getcwd()
 DIR_LOGS = os.path.join(CARPETA_BASE, "logs")
+DIR_PROCESADOS = os.path.join(CARPETA_BASE, "02_procesados")
+DIR_ERRORES = os.path.join(CARPETA_BASE, "03_errores")
 ARCHIVO_LOG_CSV = os.path.join(DIR_LOGS, "audit_log.csv")
 ARCHIVO_PROCESADAS_CSV = os.path.join(DIR_LOGS, "procesadas.csv")
 ARCHIVO_ERRORES_CSV = os.path.join(DIR_LOGS, "errores.csv")
@@ -315,6 +317,109 @@ def login(driver):
         else:
             raise Exception("No se pudo iniciar sesión ni verificar estado logueado.")
 
+def asegurar_sucursal_warnes(driver):
+    """Verifica la sucursal activa en la esquina superior derecha y la cambia a AV. WARNES 1318 si es necesario."""
+    print("🏢 Verificando sucursal activa...")
+    
+    # 1. Comprobar si ya estamos en la sucursal correcta
+    JS_CHECK_SUCURSAL = """
+        const todos = document.querySelectorAll('a, span, div, strong');
+        for (let el of todos) {
+            const rect = el.getBoundingClientRect();
+            if (rect.top >= 0 && rect.top < 100 && rect.right > window.innerWidth - 350 && rect.width > 0 && rect.height > 0) {
+                const txt = (el.innerText || "").trim().toUpperCase();
+                if (txt.includes("AV. WARNES 1318") || txt.includes("WARNES 1318")) {
+                    return "WARNES_OK";
+                }
+            }
+        }
+        return "OTRA_SUCURSAL";
+    """
+    
+    try:
+        status = driver.execute_script(JS_CHECK_SUCURSAL)
+        if status == "WARNES_OK":
+            print("   ✅ Sucursal activa correcta: AV. WARNES 1318")
+            return
+    except Exception as e:
+        print(f"   ⚠️ Error al verificar sucursal: {e}")
+        
+    print("   ⚠️ Sucursal incorrecta o no detectada. Cambiando sucursal...")
+    
+    # 2. Hacer clic en el selector de sucursal
+    JS_CLICK_SUCURSAL_HEADER = """
+        const todos = document.querySelectorAll('a, span, div, strong');
+        for (let el of todos) {
+            const rect = el.getBoundingClientRect();
+            if (rect.top >= 0 && rect.top < 100 && rect.right > window.innerWidth - 350 && rect.width > 0 && rect.height > 0) {
+                const txt = (el.innerText || "").trim().toUpperCase();
+                if (txt.includes("WARNES") || txt.includes("CENTRAL") || txt.includes("SUCURSAL") || txt.includes("DEPOSITO") || txt.includes("LOCAL")) {
+                    el.click();
+                    return "CLICKED";
+                }
+            }
+        }
+        return "NOT_FOUND";
+    """
+    
+    try:
+        clicked = driver.execute_script(JS_CLICK_SUCURSAL_HEADER)
+        if clicked == "NOT_FOUND":
+            print("   ❌ Error: No se pudo encontrar el selector de sucursal en el header.")
+            return
+    except Exception as e:
+        print(f"   ❌ Error al hacer clic en el selector de sucursal: {e}")
+        return
+        
+    # Esperar a que la ventana de selección de sucursal esté visible
+    time.sleep(1.5)
+    
+    # 3. Seleccionar la sucursal y hacer clic en Aceptar en el modal
+    JS_SELECCIONAR_WARNES_Y_ACEPTAR = """
+        const elementos = Array.from(document.querySelectorAll('option, label, input, a, td, span'));
+        let found = false;
+        for (let el of elementos) {
+            const txt = (el.textContent || el.innerText || el.value || "").trim().toUpperCase();
+            if (txt.includes("WARNES 1318") || txt.includes("AV. WARNES") || txt.includes("WARNES")) {
+                if (el.tagName === 'OPTION') {
+                    el.selected = true;
+                    el.parentElement.dispatchEvent(new Event('change', { bubbles: true }));
+                    found = true;
+                } else if (el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox')) {
+                    el.click();
+                    found = true;
+                } else {
+                    el.click();
+                    const inputRel = el.querySelector('input') || (el.htmlFor ? document.getElementById(el.htmlFor) : null);
+                    if (inputRel) inputRel.click();
+                    found = true;
+                }
+            }
+        }
+        
+        if (!found) return "WARNES_NOT_FOUND_IN_MODAL";
+        
+        const botones = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.accept, a.btn, .button'));
+        for (let btn of botones) {
+            const txt = (btn.textContent || btn.value || "").trim().toUpperCase();
+            if (txt === "ACEPTAR" || txt.includes("ACEPTAR") || txt.includes("SAVE") || txt.includes("GUARDAR")) {
+                btn.click();
+                return "OK";
+            }
+        }
+        return "ACCEPT_BUTTON_NOT_FOUND";
+    """
+    
+    try:
+        res = driver.execute_script(JS_SELECCIONAR_WARNES_Y_ACEPTAR)
+        if res == "OK":
+            print("   🏢 Sucursal cambiada a AV. WARNES 1318. Esperando recarga...")
+            time.sleep(3)  # Esperar a que la página recargue con la nueva sucursal
+        else:
+            print(f"   ❌ Error al cambiar sucursal en el modal: {res}")
+    except Exception as e:
+        print(f"   ❌ Fallo al ejecutar la selección de sucursal: {e}")
+
 def navegar_una_sola_vez(driver):
     """Navega al formulario de alta UNA VEZ al principio."""
     wait = WebDriverWait(driver, 10)
@@ -425,6 +530,8 @@ def procesar_lote(driver):
                 select_stock.select_by_value("toda_sr")
 
             # C. PRODUCTOS
+            mismatch_detectado = False
+            detalle_mismatch = ""
             for prod in factura["productos"]:
                 # 1. Buscar y Asignar ID (JS)
                 res_prod = driver.execute_async_script(JS_BUSCAR_PRODUCTO, prod["codigo"])
@@ -448,10 +555,9 @@ def procesar_lote(driver):
                     # Calcular similitud de descripción para alertar discrepancias de código (ej. choques de EANs o códigos cortos)
                     similitud = calcular_similitud_palabras(prod["descripcion"], desc_prod_cian or nombre_prod_cian)
                     if similitud == 0.0:
-                        print(f"   ⚠️ ALERTA: Coincidencia dudosa para código {prod['codigo']}.")
-                        print(f"      PDF: '{prod['descripcion']}'")
-                        print(f"      Cianbox: '{nombre_prod_cian} {desc_prod_cian}'")
-                        registrar_log_selenium(cab, "PRODUCTO_SOSPECHOSO", f"PDF: {prod['codigo']} ({prod['descripcion']}) -> Cianbox: {nombre_prod_cian} {desc_prod_cian} (0% coincidencia palabras)")
+                        mismatch_detectado = True
+                        detalle_mismatch = f"Código {prod['codigo']}: PDF '{prod['descripcion']}' vs Cianbox '{nombre_prod_cian} {desc_prod_cian}'"
+                        break  # Abortar carga de productos de esta factura de inmediato
                     elif nombre_prod_cian != prod['codigo']:
                         registrar_log_selenium(cab, "PRODUCTO_OK", f"Código PDF: {prod['codigo']} -> Cianbox: {nombre_prod_cian}")
 
@@ -470,6 +576,27 @@ def procesar_lote(driver):
                     )
                 except:
                     time.sleep(0.5)
+
+            # Si detectamos un producto sospechoso, cancelamos y movemos el PDF a la carpeta de errores
+            if mismatch_detectado:
+                print(f"   ❌ RECHAZADO EN CARGA (PRODUCTO SOSPECHOSO): {detalle_mismatch}")
+                registrar_log_selenium(cab, "RECHAZADO_SOSPECHOSO", f"Rechazado en carga por sospecha de producto incorrecto: {detalle_mismatch}")
+                
+                # Mover el archivo PDF de 02_procesados a 03_errores
+                nombre_pdf = cab.get("archivo")
+                if nombre_pdf:
+                    ruta_ok = os.path.join(DIR_PROCESADOS, nombre_pdf)
+                    ruta_error = os.path.join(DIR_ERRORES, nombre_pdf)
+                    if os.path.exists(ruta_ok):
+                        try:
+                            os.rename(ruta_ok, ruta_error)
+                            print(f"      📁 PDF movido de procesados a errores: {nombre_pdf}")
+                        except Exception as file_err:
+                            print(f"      ⚠️ No se pudo mover el PDF: {file_err}")
+                
+                # Limpiar formulario/modal para poder seguir con la siguiente factura
+                reiniciar_modal(driver)
+                continue
 
             # --- DETECCIÓN DE DUPLICADOS ---
             # Lo hago después de la carga de productos para darle tiempo al AJAX de Cianbox para validar
@@ -582,6 +709,7 @@ if __name__ == "__main__":
     driver = iniciar_driver()
     try:
         login(driver)
+        asegurar_sucursal_warnes(driver)
         procesar_lote(driver)
         print("\n✨ Fin del proceso.")
     except Exception as e:

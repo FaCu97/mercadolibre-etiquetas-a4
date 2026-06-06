@@ -525,6 +525,11 @@ def procesar_archivo_individual(ruta_pdf):
             
             # Ejecución
             parsed_data, parse_error = funcion_parser(page, full_text, ruta_pdf)
+            if parsed_data and "cabecera" in parsed_data:
+                parsed_data["cabecera"]["archivo"] = os.path.basename(ruta_pdf)
+                if "mueve_stock" not in parsed_data["cabecera"]:
+                    # Default a mover stock si no fue configurado explícitamente por el parser
+                    parsed_data["cabecera"]["mueve_stock"] = True
             return parsed_data, parse_error, nombre_parser
             
     except Exception as e:
