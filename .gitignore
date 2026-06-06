@@ -5,3 +5,7 @@ lote_cianbox.json
 /03_errores/*
 /01_pendientes/*
 /01_logs/*
+.DS_Store
+logs/errores.csv
+logs/procesadas.csv
+logs/descargados_mails.json

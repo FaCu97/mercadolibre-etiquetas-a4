@@ -198,25 +198,33 @@ def click_seguro(driver, selector):
         elemento = driver.find_element(*selector)
         driver.execute_script("arguments[0].click();", elemento)
 
-def escribir_seguro(driver, selector, texto):
+def escribir_teclado(driver, selector, texto):
     """
-    Borra el campo agresivamente y escribe el valor limpio.
+    Escribe el valor simulando pulsaciones de teclado físicamente.
+    Útil para campos con máscaras de entrada (como la fecha) o inputs con autocompletar.
     """
     elemento = driver.find_element(*selector)
     elemento.click()
-    time.sleep(0.1)
-    
-    # Seleccionar todo y borrar
+    time.sleep(0.05)
     elemento.send_keys(Keys.CONTROL + "a")
     elemento.send_keys(Keys.BACK_SPACE)
-    
-    # Escribimos el valor limpio (sin puntos de miles)
     valor_limpio = limpiar_monto_para_input(str(texto))
     elemento.send_keys(valor_limpio)
-    
-    # Disparamos el evento 'change' saliendo con TAB
     elemento.send_keys(Keys.TAB)
-    time.sleep(0.1)
+    time.sleep(0.05)
+
+def escribir_seguro(driver, selector, texto):
+    """
+    Escribe el valor limpio utilizando JavaScript para velocidad extrema y confiabilidad.
+    """
+    elemento = driver.find_element(*selector)
+    valor_limpio = limpiar_monto_para_input(str(texto))
+    driver.execute_script(
+        "arguments[0].value = arguments[1]; "
+        "arguments[0].dispatchEvent(new Event('input', { bubbles: true })); "
+        "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+        elemento, valor_limpio
+    )
 
 def reiniciar_modal(driver):
     """Cierra el modal actual y vuelve a abrir el formulario de Alta."""
@@ -505,9 +513,9 @@ def procesar_lote(driver):
             # Ajuste Máscara: Cianbox tiene el '20' fijo (ej: __/__/20__). Enviamos ddmmyy (180226).
             fecha_dt = datetime.strptime(cab["fecha"], "%d/%m/%Y")
             fecha_formateada = fecha_dt.strftime("%d%m%y")
-            escribir_seguro(driver, SELECTORES["fecha"], fecha_formateada)
-            escribir_seguro(driver, SELECTORES["pv"], cab["puntoVenta"])
-            escribir_seguro(driver, SELECTORES["numero"], cab["numero"])
+            escribir_teclado(driver, SELECTORES["fecha"], fecha_formateada)
+            escribir_teclado(driver, SELECTORES["pv"], cab["puntoVenta"])
+            escribir_teclado(driver, SELECTORES["numero"], cab["numero"])
 
             # Selects
             val_tipo = MAPEO_COMPROBANTES.get(cab["tipo"].upper(), "1") 
@@ -544,7 +552,7 @@ def procesar_lote(driver):
                     
                     # Escribimos manualmente la descripción del PDF en el input visual
                     desc_manual = f"{prod['codigo']} {prod['descripcion']}"
-                    escribir_seguro(driver, (By.CSS_SELECTOR, ".box_main_field"), desc_manual)
+                    escribir_teclado(driver, (By.CSS_SELECTOR, ".box_main_field"), desc_manual)
                     
                 else:
                     # CASO: Encontrado y vinculado
@@ -571,11 +579,11 @@ def procesar_lote(driver):
 
                 # Esperar a que se añada el producto (por ejemplo, que el input visual se vacíe al agregarse)
                 try:
-                    WebDriverWait(driver, 3).until(
+                    WebDriverWait(driver, 3, poll_frequency=0.1).until(
                         lambda d: d.find_element(By.CSS_SELECTOR, ".box_main_field").get_attribute("value") == ""
                     )
                 except:
-                    time.sleep(0.5)
+                    time.sleep(0.1)
 
             # Si detectamos un producto sospechoso, cancelamos y movemos el PDF a la carpeta de errores
             if mismatch_detectado:
@@ -639,23 +647,44 @@ def procesar_lote(driver):
                     
                     # Esperar a que el campo de monto de percepción se limpie
                     try:
-                        WebDriverWait(driver, 2).until(
+                        WebDriverWait(driver, 2, poll_frequency=0.1).until(
                             lambda d: d.find_element(*SELECTORES["monto_percepcion"]).get_attribute("value") == ""
                         )
                     except:
-                        time.sleep(0.2)
+                        time.sleep(0.1)
 
                 print(f"      ✅ Item de IIBB agregado.")
 
+            # Re-asegurar la opción de stock elegida justo antes de guardar (por si algún AJAX la reseteó)
+            try:
+                select_stock = Select(driver.find_element(*SELECTORES["select_stock"]))
+                if not mueve_stock:
+                    select_stock.select_by_value("no_stock")
+                else:
+                    select_stock.select_by_value("toda_sr")
+            except Exception as stock_err:
+                print(f"      ⚠️ No se pudo re-confirmar el tipo de stock: {stock_err}")
+
             # E. GUARDAR Y PREPARAR SIGUIENTE
+            if "1139887" in str(cab.get("numero", "")):
+                print("\n⚠️ PAUSA DE REVISIÓN ACTIVADA PARA FACTURA 1139887.")
+                print("   Por favor, revisa todos los campos en el navegador.")
+                input("   Presiona [ENTER] en esta terminal para continuar con el guardado...")
+
             old_fecha_el = driver.find_element(*SELECTORES["fecha"])
             print("💾 Guardando...")
             driver.find_element(*SELECTORES["guardar"]).click()
             
-            # Esperar brevemente por errores o duplicados
+            # Esperar a que ocurra una de tres cosas:
+            # 1. Aparezca la ventana de duplicado
+            # 2. Aparezca la notificación de error
+            # 3. La fecha anterior quede obsoleta (staleness, indicando guardado exitoso y refresco de página)
+            print("   ⏳ Esperando confirmación de guardado...")
             try:
-                WebDriverWait(driver, 1.5).until(
-                    lambda d: len(d.find_elements(By.ID, "mb_duplicated")) > 0 or len(d.find_elements(*SELECTORES["notificacion_error"])) > 0
+                WebDriverWait(driver, 5, poll_frequency=0.1).until(
+                    lambda d: len(d.find_elements(By.ID, "mb_duplicated")) > 0 or 
+                              len(d.find_elements(*SELECTORES["notificacion_error"])) > 0 or
+                              EC.staleness_of(old_fecha_el)(d)
                 )
             except:
                 pass
@@ -677,10 +706,10 @@ def procesar_lote(driver):
                 reiniciar_modal(driver)
                 continue
             
-            # Esperar recarga del formulario
-            print("   ⏳ Esperando confirmación de guardado...")
+            # Si el elemento no quedó obsoleto por alguna razón, forzar la espera
             try:
-                wait.until(EC.staleness_of(old_fecha_el))
+                if not EC.staleness_of(old_fecha_el)(driver):
+                    WebDriverWait(driver, 3, poll_frequency=0.1).until(EC.staleness_of(old_fecha_el))
             except:
                 pass
             

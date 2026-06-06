@@ -245,8 +245,8 @@ def parsear_cromosol(page, full_text, ruta_pdf):
             mueve_stock = True
             # --- REGLA DE NEGOCIO: NC CROMOSOL (STOCK) ---
             if tipo == "NOTA DE CREDITO":
-                # Si es una bonificación por volumen, oferta u operación (descuento comercial), NO mueve stock
-                if re.search(r'POR:\s*(VOLUMEN|OFERTA|OPERACI[OÓ]N)|(VOLUMEN|OFERTA|OPERACI[OÓ]N)\s*ID', full_text, re.IGNORECASE):
+                # Si es una bonificación por volumen, oferta, operación o arreglo, NO mueve stock
+                if re.search(r'POR:\s*(VOLUMEN|OFERTA|OPERACI[OÓ]N|ARREGLO)|(VOLUMEN|OFERTA|OPERACI[OÓ]N|ARREGLO)\s*ID', full_text, re.IGNORECASE):
                     mueve_stock = False
 
             letra = "X"
@@ -538,41 +538,6 @@ def procesar_archivo_individual(ruta_pdf):
 # ==============================================================================
 # 6. EJECUCIÓN DEL LOTE
 # ==============================================================================
-def procesar_wrapper(ruta):
-    """Función envoltorio para procesar un archivo en un hilo aislado."""
-    nombre = os.path.basename(ruta)
-    
-    # Procesamiento pesado (CPU/Red) fuera del bloqueo
-    datos, error, nombre_parser_usado = procesar_archivo_individual(ruta)
-    
-    # Sección crítica: Salida por pantalla y movimiento de archivos
-    with print_lock:
-        print(f"\n📄 Analizando: {nombre}")
-        print(f"   🔎 Estrategia detectada: {nombre_parser_usado}")
-        
-        prov = datos["cabecera"].get("proveedor", "?") if datos and "cabecera" in datos else "?"
-        tipo = datos["cabecera"].get("tipo", "?") if datos and "cabecera" in datos else "?"
-        nro = datos["cabecera"].get("numero", "?") if datos and "cabecera" in datos else "?"
-
-        # --- CHEQUEO DE DUPLICADOS HISTÓRICOS ---
-        key_actual = f"{prov.strip().upper()}_{tipo.strip().upper()}_{nro.strip()}"
-        if key_actual in HISTORIAL_PROCESADO:
-            msg = f"Factura ya procesada anteriormente (Historial: {prov} {nro})"
-            print(f"   ⏭️ SALTADO: {msg}")
-            mover_archivo(ruta, DIR_SALIDA_ERROR) # Movemos a error/descarte para no procesar de nuevo
-            registrar_log(nombre, prov, tipo, nro, "YA_PROCESADA", "Detectada en audit_log.csv")
-            return None
-
-        if error:
-            print(f"   ❌ RECHAZADO: {error}")
-            mover_archivo(ruta, DIR_SALIDA_ERROR)
-            registrar_log(nombre, prov, tipo, nro, "ERROR", error)
-            return None
-        else:
-            print(f"   ✅ APROBADO")
-            mover_archivo(ruta, DIR_SALIDA_OK)
-            registrar_log(nombre, prov, tipo, nro, "OK", "Procesado correctamente")
-            return datos
 
 def ejecutar_lote():
     inicializar_carpetas()
@@ -583,11 +548,47 @@ def ejecutar_lote():
     archivos = glob.glob(os.path.join(DIR_ENTRADA, "*.[pP][dD][fF]"))
     print(f"\n🚀 Iniciando procesamiento de {len(archivos)} archivos en '{DIR_ENTRADA}'...")
     
-    # Usamos ThreadPoolExecutor para procesar en paralelo (max 5 hilos simultáneos)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        resultados = list(executor.map(procesar_wrapper, archivos))
-    
-    lote_exitoso = [r for r in resultados if r is not None]
+    # Usamos ProcessPoolExecutor para procesar en paralelo aprovechando todos los núcleos del CPU
+    lote_exitoso = []
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        # Mapeamos la función pesada de parseo en el pool de procesos
+        resultados = executor.map(procesar_archivo_individual, archivos)
+        
+        for ruta, resultado in zip(archivos, resultados):
+            nombre = os.path.basename(ruta)
+            print(f"\n📄 Analizando: {nombre}")
+            
+            if resultado is None:
+                print("   ❌ Error crítico al procesar el archivo (resultado vacío).")
+                mover_archivo(ruta, DIR_SALIDA_ERROR)
+                registrar_log(nombre, "?", "?", "?", "FATAL_ERROR", "Resultado nulo")
+                continue
+                
+            datos, error, nombre_parser_usado = resultado
+            print(f"   🔎 Estrategia detectada: {nombre_parser_usado}")
+            
+            prov = datos["cabecera"].get("proveedor", "?") if datos and "cabecera" in datos else "?"
+            tipo = datos["cabecera"].get("tipo", "?") if datos and "cabecera" in datos else "?"
+            nro = datos["cabecera"].get("numero", "?") if datos and "cabecera" in datos else "?"
+
+            # --- CHEQUEO DE DUPLICADOS HISTÓRICOS ---
+            key_actual = f"{prov.strip().upper()}_{tipo.strip().upper()}_{nro.strip()}"
+            if key_actual in HISTORIAL_PROCESADO:
+                msg = f"Factura ya procesada anteriormente (Historial: {prov} {nro})"
+                print(f"   ⏭️ SALTADO: {msg}")
+                mover_archivo(ruta, DIR_SALIDA_ERROR) # Movemos a error/descarte para no procesar de nuevo
+                registrar_log(nombre, prov, tipo, nro, "YA_PROCESADA", "Detectada en audit_log.csv")
+                continue
+
+            if error:
+                print(f"   ❌ RECHAZADO: {error}")
+                mover_archivo(ruta, DIR_SALIDA_ERROR)
+                registrar_log(nombre, prov, tipo, nro, "ERROR", error)
+            else:
+                print(f"   ✅ APROBADO")
+                mover_archivo(ruta, DIR_SALIDA_OK)
+                registrar_log(nombre, prov, tipo, nro, "OK", "Procesado correctamente")
+                lote_exitoso.append(datos)
 
     # Guardar JSON Final
     if lote_exitoso:
