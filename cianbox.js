@@ -365,64 +365,32 @@
     }
 
     async function asegurarSucursalWarnes() {
-        const todos = document.querySelectorAll('a, span, div, strong');
-        let headerWarnes = false;
-        for (let el of todos) {
-            const rect = el.getBoundingClientRect();
-            if (rect.top >= 0 && rect.top < 100 && rect.right > window.innerWidth - 350 && rect.width > 0 && rect.height > 0) {
-                const txt = (el.innerText || "").trim().toUpperCase();
-                if (txt.includes("AV. WARNES 1318") || txt.includes("WARNES 1318")) {
-                    headerWarnes = true;
-                    break;
-                }
-            }
-        }
-
-        if (headerWarnes) {
-            return true;
-        }
-
-        log("🏢 Sucursal incorrecta o no detectada. Cambiando a AV. WARNES 1318...");
-
-        // 2. Hacer clic en el selector de sucursal en el header
-        let selectorSucursal = null;
-        for (let el of todos) {
-            const rect = el.getBoundingClientRect();
-            if (rect.top >= 0 && rect.top < 100 && rect.right > window.innerWidth - 350 && rect.width > 0 && rect.height > 0) {
-                const txt = (el.innerText || "").trim().toUpperCase();
-                if (txt.includes("WARNES") || txt.includes("CENTRAL") || txt.includes("SUCURSAL") || txt.includes("DEPOSITO") || txt.includes("LOCAL")) {
-                    selectorSucursal = el;
-                    break;
-                }
-            }
-        }
-
-        if (!selectorSucursal) {
+        const el = document.querySelector('a.selected_sucursal') || document.querySelector('a[alt="elegir_sucursal"]');
+        if (!el) {
             log("❌ No se encontró el selector de sucursal en el header.", "error");
             return false;
         }
 
-        selectorSucursal.click();
+        const txt = el.innerText.toUpperCase().trim();
+        if (txt.includes("1318") || txt.includes("WARNES")) {
+            return true; // Ya está en la sucursal correcta
+        }
+
+        log("🏢 Sucursal incorrecta. Cambiando a AV. WARNES 1318...");
+        el.click();
         await new Promise(r => setTimeout(r, 1500)); // Esperar a que el modal cargue
 
         // 3. Seleccionar Warnes en el modal
-        const elementos = Array.from(document.querySelectorAll('option, label, input, a, td, span'));
+        const labels = document.querySelectorAll('#rec_sucursales label');
         let found = false;
-        for (let el of elementos) {
-            const txt = (el.textContent || el.innerText || el.value || "").trim().toUpperCase();
-            if (txt.includes("WARNES 1318") || txt.includes("AV. WARNES") || txt.includes("WARNES")) {
-                if (el.tagName === 'OPTION') {
-                    el.selected = true;
-                    el.parentElement.dispatchEvent(new Event('change', { bubbles: true }));
+        for (let label of labels) {
+            const txt = label.innerText.toUpperCase().trim();
+            if (txt.startsWith("AV. WARNES 1318")) {
+                const input = label.querySelector('input[type="radio"]');
+                if (input) {
+                    input.click();
                     found = true;
-                } else if (el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox')) {
-                    el.click();
-                    found = true;
-                } else {
-                    el.click();
-                    const inputRel = el.querySelector('input') || (el.htmlFor ? document.getElementById(el.htmlFor) : null);
-                    if (inputRel) inputRel.click();
-                    found = true;
+                    break;
                 }
             }
         }

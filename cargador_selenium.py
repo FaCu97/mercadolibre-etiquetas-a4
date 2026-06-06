@@ -331,14 +331,12 @@ def asegurar_sucursal_warnes(driver):
     
     # 1. Comprobar si ya estamos en la sucursal correcta
     JS_CHECK_SUCURSAL = """
-        const todos = document.querySelectorAll('a, span, div, strong');
-        for (let el of todos) {
-            const rect = el.getBoundingClientRect();
-            if (rect.top >= 0 && rect.top < 100 && rect.right > window.innerWidth - 350 && rect.width > 0 && rect.height > 0) {
-                const txt = (el.innerText || "").trim().toUpperCase();
-                if (txt.includes("AV. WARNES 1318") || txt.includes("WARNES 1318")) {
-                    return "WARNES_OK";
-                }
+        const el = document.querySelector('a.selected_sucursal') || document.querySelector('a[alt="elegir_sucursal"]');
+        if (el) {
+            const txt = el.innerText.toUpperCase().trim();
+            // Validar que la sucursal activa sea exactamente "AV. WARNES 1318" (y no "1318 SRL")
+            if (txt === "AV. WARNES 1318") {
+                return "WARNES_OK";
             }
         }
         return "OTRA_SUCURSAL";
@@ -356,16 +354,10 @@ def asegurar_sucursal_warnes(driver):
     
     # 2. Hacer clic en el selector de sucursal
     JS_CLICK_SUCURSAL_HEADER = """
-        const todos = document.querySelectorAll('a, span, div, strong');
-        for (let el of todos) {
-            const rect = el.getBoundingClientRect();
-            if (rect.top >= 0 && rect.top < 100 && rect.right > window.innerWidth - 350 && rect.width > 0 && rect.height > 0) {
-                const txt = (el.innerText || "").trim().toUpperCase();
-                if (txt.includes("WARNES") || txt.includes("CENTRAL") || txt.includes("SUCURSAL") || txt.includes("DEPOSITO") || txt.includes("LOCAL")) {
-                    el.click();
-                    return "CLICKED";
-                }
-            }
+        const el = document.querySelector('a.selected_sucursal') || document.querySelector('a[alt="elegir_sucursal"]');
+        if (el) {
+            el.click();
+            return "CLICKED";
         }
         return "NOT_FOUND";
     """
@@ -384,23 +376,17 @@ def asegurar_sucursal_warnes(driver):
     
     # 3. Seleccionar la sucursal y hacer clic en Aceptar en el modal
     JS_SELECCIONAR_WARNES_Y_ACEPTAR = """
-        const elementos = Array.from(document.querySelectorAll('option, label, input, a, td, span'));
+        const labels = document.querySelectorAll('#rec_sucursales label');
         let found = false;
-        for (let el of elementos) {
-            const txt = (el.textContent || el.innerText || el.value || "").trim().toUpperCase();
-            if (txt.includes("WARNES 1318") || txt.includes("AV. WARNES") || txt.includes("WARNES")) {
-                if (el.tagName === 'OPTION') {
-                    el.selected = true;
-                    el.parentElement.dispatchEvent(new Event('change', { bubbles: true }));
+        for (let label of labels) {
+            const txt = label.innerText.toUpperCase().trim();
+            // Buscar el label que empiece exactamente con "AV. WARNES 1318"
+            if (txt.startsWith("AV. WARNES 1318")) {
+                const input = label.querySelector('input[type="radio"]');
+                if (input) {
+                    input.click();
                     found = true;
-                } else if (el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox')) {
-                    el.click();
-                    found = true;
-                } else {
-                    el.click();
-                    const inputRel = el.querySelector('input') || (el.htmlFor ? document.getElementById(el.htmlFor) : null);
-                    if (inputRel) inputRel.click();
-                    found = true;
+                    break;
                 }
             }
         }

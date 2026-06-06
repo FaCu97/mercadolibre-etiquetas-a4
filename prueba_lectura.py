@@ -145,8 +145,10 @@ def procesar_factura_estricta(ruta_pdf):
         diff_total = abs(total_calculado - f_total_leido)
 
         # Llenar reporte
-        # Tolerancia < 0.01 significa que la diferencia debe ser matemáticamente 0
-        datos["cabecera"]["validacion"]["suma_productos_ok"] = diff_prod < TOLERANCIA
+        total_unidades = sum(float(p["cantidad"]) for p in datos["productos"])
+        tolerancia_dinamica = TOLERANCIA + (total_unidades * 0.005)
+
+        datos["cabecera"]["validacion"]["suma_productos_ok"] = diff_prod < tolerancia_dinamica
         datos["cabecera"]["validacion"]["diferencia_productos"] = float_to_str(diff_prod)
         
         datos["cabecera"]["validacion"]["suma_total_ok"] = diff_total < TOLERANCIA
@@ -154,7 +156,7 @@ def procesar_factura_estricta(ruta_pdf):
         
         print(f"\n📊 REPORTE DE AUDITORÍA ESTRICTA:")
         print(f"   1. Suma Productos ({float_to_str(suma_productos_calculada)}) vs Neto ({val_neto_str})")
-        print(f"      Diferencia: {diff_prod:.4f} -> {'✅ EXACTO' if diff_prod < TOLERANCIA else '❌ DIFIERE'}")
+        print(f"      Diferencia: {diff_prod:.4f} -> {'✅ EXACTO' if diff_prod < tolerancia_dinamica else '❌ DIFIERE'}")
         
         print(f"   2. Suma Fiscal ({float_to_str(total_calculado)}) vs Total PDF ({val_total_str})")
         print(f"      Diferencia: {diff_total:.4f} -> {'✅ EXACTO' if diff_total < TOLERANCIA else '❌ DIFIERE'}")

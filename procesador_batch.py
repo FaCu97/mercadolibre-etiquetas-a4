@@ -361,8 +361,12 @@ def parsear_cromosol(page, full_text, ruta_pdf):
             # --- CHEQUEO TOLERANCIA ---
             diff_prod = abs(suma_productos - f_subtotal)
             
-            if diff_prod > TOLERANCIA:
-                msg = f"Error Suma Productos. Calc: {suma_productos} vs Subtotal: {f_subtotal} (Diff: {diff_prod:.2f})"
+            # Tolerancia dinámica: se añade 0.005 por cada unidad de producto para contemplar el tercer decimal oculto en el PDF
+            total_unidades = sum(float(p["cantidad"]) for p in datos["productos"])
+            tolerancia_dinamica = TOLERANCIA + (total_unidades * 0.005)
+            
+            if diff_prod > tolerancia_dinamica:
+                msg = f"Error Suma Productos. Calc: {suma_productos} vs Subtotal: {f_subtotal} (Diff: {diff_prod:.2f}, Tol: {tolerancia_dinamica:.2f})"
                 return datos, msg # Devolvemos datos para log, pero con mensaje de error
 
             f_total_leido = str_to_float(val_total_str)
