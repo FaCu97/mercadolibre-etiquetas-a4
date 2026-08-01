@@ -9,3 +9,12 @@ lote_cianbox.json
 logs/errores.csv
 logs/procesadas.csv
 logs/descargados_mails.json
+
+# Caché de compilación de Python
+__pycache__/
+*.pyc
+
+# Entorno virtual de Python
+venv/
+
+.DS_Store

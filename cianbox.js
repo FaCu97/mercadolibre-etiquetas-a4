@@ -289,17 +289,21 @@
         const activo = localStorage.getItem(RUNNING_KEY) === 'true';
         if (!activo) return;
 
-        // --- VERIFICAR Y CAMBIAR SUCURSAL ANTES DE EMPEZAR ---
-        const sucursalCorrecta = await asegurarSucursalWarnes();
-        if (!sucursalCorrecta) {
-            return; // Detiene el ciclo actual (la página se recargará)
-        }
-
         let cola = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         if (cola.length === 0) {
             log("✨ Proceso terminado. No quedan facturas en la cola.", 'info');
             detenerCarga();
             return;
+        }
+
+        const factura = cola[0];
+        const idContribuyente = (factura.cabecera.id_contribuyente !== undefined && factura.cabecera.id_contribuyente !== null) ? String(factura.cabecera.id_contribuyente) : "0";
+        const sucursalReq = idContribuyente === "1" ? "1318 SRL" : "AV. WARNES 1318";
+
+        // --- VERIFICAR Y CAMBIAR SUCURSAL ANTES DE EMPEZAR ---
+        const sucursalCorrecta = await asegurarSucursal(sucursalReq);
+        if (!sucursalCorrecta) {
+            return; // Detiene el ciclo actual (la página se recargará)
         }
 
         // Cargar vista ejecucion si estaba recargado
@@ -318,7 +322,6 @@
         const completadas = totalInicial - totalActual;
         actualizarProgreso(completadas, totalInicial);
 
-        const factura = cola[0];
         log(`Procesando factura: ${factura.cabecera.numero} (${factura.cabecera.proveedor})`, 'info');
 
         try {
@@ -364,7 +367,7 @@
         }
     }
 
-    async function asegurarSucursalWarnes() {
+    async function asegurarSucursal(targetSucursal) {
         const el = document.querySelector('a.selected_sucursal') || document.querySelector('a[alt="elegir_sucursal"]');
         if (!el) {
             log("❌ No se encontró el selector de sucursal en el header.", "error");
@@ -372,20 +375,20 @@
         }
 
         const txt = el.innerText.toUpperCase().trim();
-        if (txt.includes("1318") || txt.includes("WARNES")) {
+        if (txt === targetSucursal.toUpperCase().trim()) {
             return true; // Ya está en la sucursal correcta
         }
 
-        log("🏢 Sucursal incorrecta. Cambiando a AV. WARNES 1318...");
+        log(`🏢 Sucursal incorrecta. Cambiando a ${targetSucursal}...`);
         el.click();
         await new Promise(r => setTimeout(r, 1500)); // Esperar a que el modal cargue
 
-        // 3. Seleccionar Warnes en el modal
+        // Seleccionar en el modal
         const labels = document.querySelectorAll('#rec_sucursales label');
         let found = false;
         for (let label of labels) {
-            const txt = label.innerText.toUpperCase().trim();
-            if (txt.startsWith("AV. WARNES 1318")) {
+            const txtLabel = label.innerText.toUpperCase().trim();
+            if (txtLabel.startsWith(targetSucursal.toUpperCase().trim())) {
                 const input = label.querySelector('input[type="radio"]');
                 if (input) {
                     input.click();
@@ -396,23 +399,23 @@
         }
 
         if (!found) {
-            log("❌ No se encontró la opción de AV. WARNES 1318 en el modal.", "error");
+            log(`❌ No se encontró la opción de ${targetSucursal} en el modal.`, "error");
             return false;
         }
 
-        // 4. Click en Aceptar en el modal
+        // Click en Aceptar en el modal
         const botones = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.accept, a.btn, .button'));
         let btnAceptar = null;
         for (let btn of botones) {
-            const txt = (btn.textContent || btn.value || "").trim().toUpperCase();
-            if (txt === "ACEPTAR" || txt.includes("ACEPTAR") || txt.includes("SAVE") || txt.includes("GUARDAR")) {
+            const txtBtn = (btn.textContent || btn.value || "").trim().toUpperCase();
+            if (txtBtn === "ACEPTAR" || txtBtn.includes("ACEPTAR") || txtBtn.includes("SAVE") || txtBtn.includes("GUARDAR")) {
                 btnAceptar = btn;
                 break;
             }
         }
 
         if (btnAceptar) {
-            log("🏢 Sucursal seleccionada en modal. Guardando y recargando página...");
+            log(`🏢 Sucursal ${targetSucursal} seleccionada en modal. Guardando y recargando página...`);
             btnAceptar.click();
             return false; // Retornar false para que el ciclo se detenga y se reanude tras recargar la página
         } else {
@@ -466,6 +469,15 @@
             log(`📦 Control de Stock: ${mueveStock ? 'MUEVE STOCK (toda_sr)' : 'NO MUEVE STOCK (no_stock)'}`);
         }
 
+        // Select Contribuyente
+        let selectContribuyente = document.querySelector('select[name="id_contribuyente"]');
+        if (selectContribuyente) {
+            const valContribuyente = (datos.id_contribuyente !== undefined && datos.id_contribuyente !== null) ? String(datos.id_contribuyente) : "0";
+            selectContribuyente.value = valContribuyente;
+            selectContribuyente.dispatchEvent(new Event('change', { bubbles: true }));
+            log(`📋 Contribuyente seleccionado: ${valContribuyente === "1" ? "EQUIP STORE S.R.L" : "DE LA PLATA JOSE CARLOS"} (ID ${valContribuyente})`);
+        }
+
         // Búsqueda de proveedor vía AJAX
         const queryProv = datos.proveedor;
         log(`Buscando ID de proveedor: "${queryProv}"...`);
@@ -485,12 +497,17 @@
             const data = JSON.parse(fila.getAttribute('rel').replace(/&quot;/g, '"'));
             
             let inputId = document.querySelector('input[name="id_proveedor"]') || document.querySelector('input[type="hidden"][name*="id_prov"]');
-            if (inputId) inputId.value = data.id;
+            if (inputId) {
+                inputId.value = data.id;
+                inputId.dispatchEvent(new Event('input', { bubbles: true }));
+                inputId.dispatchEvent(new Event('change', { bubbles: true }));
+            }
 
             let inputVisual = document.querySelector('input[autocomplete="no_auto"].fc.required');
             if (inputVisual) {
                 inputVisual.value = data.nombre || data.razon_social || queryProv;
                 inputVisual.dispatchEvent(new Event('input', { bubbles: true }));
+                inputVisual.dispatchEvent(new Event('change', { bubbles: true }));
             }
             log(`✅ Proveedor asignado ID: ${data.id}`);
         } else {
@@ -578,12 +595,25 @@
 
         // Llenar inputs de productos
         let inputId = document.querySelector('input[name="add_id_producto"]');
-        if (inputId) inputId.value = idFinal;
+        if (inputId) {
+            inputId.value = idFinal;
+            inputId.dispatchEvent(new Event('input', { bubbles: true }));
+            inputId.dispatchEvent(new Event('change', { bubbles: true }));
+            if (window.jQuery) {
+                window.jQuery(inputId).change();
+                window.jQuery(inputId).trigger('change');
+            }
+        }
 
         let inputNombre = document.querySelector('.box_main_field');
         if (inputNombre) {
             inputNombre.value = nombreFinal;
             inputNombre.dispatchEvent(new Event('input', { bubbles: true }));
+            inputNombre.dispatchEvent(new Event('change', { bubbles: true }));
+            if (window.jQuery) {
+                window.jQuery(inputNombre).change();
+                window.jQuery(inputNombre).trigger('change');
+            }
         }
 
         let inputPrecio = document.querySelector('input[name="add_precio_unitario"]');

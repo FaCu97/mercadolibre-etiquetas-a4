@@ -511,6 +511,16 @@ def detectar_estrategia(full_text):
     # 3. FALLBACK A IA (Si no se reconoce ninguno)
     return parsear_generico_ia
 
+def identificar_id_contribuyente(full_text):
+    text_clean = full_text.replace("-", "").replace(" ", "")
+    # EQUIP STORE S.R.L: CUIT 30719342457
+    if "30719342457" in text_clean or "EQUIPSTORE" in text_clean.upper():
+        return "1"
+    # DE LA PLATA JOSE CARLOS: CUIT 20173327324
+    if "20173327324" in text_clean or "DELAPLATAJOSE" in text_clean.upper():
+        return "0"
+    return None
+
 def procesar_archivo_individual(ruta_pdf):
     """
     Abre el PDF, detecta el proveedor y ejecuta la estrategia correspondiente.
@@ -534,6 +544,12 @@ def procesar_archivo_individual(ruta_pdf):
                 if "mueve_stock" not in parsed_data["cabecera"]:
                     # Default a mover stock si no fue configurado explícitamente por el parser
                     parsed_data["cabecera"]["mueve_stock"] = True
+                
+                # Identificar contribuyente
+                id_contribuyente = identificar_id_contribuyente(full_text)
+                if id_contribuyente is None:
+                    return None, "No se pudo identificar un contribuyente válido (CUIT no coincide con JOSE ni EQUIP STORE)", nombre_parser
+                parsed_data["cabecera"]["id_contribuyente"] = id_contribuyente
             return parsed_data, parse_error, nombre_parser
             
     except Exception as e:
