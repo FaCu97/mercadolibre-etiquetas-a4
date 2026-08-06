@@ -247,11 +247,18 @@
         }
 
         try {
-            const lote = JSON.parse(input);
-            if (!Array.isArray(lote)) {
-                alert("El lote debe ser un array JSON de facturas.");
+            let lote = JSON.parse(input);
+            if (!Array.isArray(lote) || lote.length === 0) {
+                alert("El JSON debe ser un array con al menos una factura.");
                 return;
             }
+
+            // Ordenar por id_contribuyente para procesar agrupado y evitar cambios innecesarios de sucursal
+            lote.sort((a, b) => {
+                const idA = String((a.cabecera && a.cabecera.id_contribuyente) || "0");
+                const idB = String((b.cabecera && b.cabecera.id_contribuyente) || "0");
+                return idA.localeCompare(idB);
+            });
 
             localStorage.setItem(STORAGE_KEY, JSON.stringify(lote));
             localStorage.setItem(RUNNING_KEY, 'true');

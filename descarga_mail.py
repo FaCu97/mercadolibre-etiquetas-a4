@@ -9,29 +9,71 @@ from imap_tools import MailBox, A
 # Cargar variables de entorno
 load_dotenv()
 
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
 EMAIL_SERVER = os.getenv("EMAIL_SERVER")
-EMAIL_FOLDER = os.getenv("EMAIL_FOLDER")
 
-# Validar credenciales, servidor y carpeta indicando exactamente cuál falta
-faltantes = []
-if not EMAIL_USER:
-    faltantes.append("EMAIL_USER")
-if not EMAIL_PASS:
-    faltantes.append("EMAIL_PASS")
+def obtener_cuentas():
+    """
+    Busca variables numeradas (EMAIL_USER_1, EMAIL_USER_2, etc.) en el entorno.
+    Si no encuentra ninguna numerada, busca la configuración legacy (EMAIL_USER, EMAIL_PASS, EMAIL_FOLDER).
+    Devuelve una lista de diccionarios con la configuración de cada casilla.
+    """
+    cuentas = []
+    
+    # Buscar variables dinámicas numeradas EMAIL_USER_1, EMAIL_USER_2, ...
+    index = 1
+    while True:
+        user = os.getenv(f"EMAIL_USER_{index}")
+        pwd = os.getenv(f"EMAIL_PASS_{index}")
+        folder = os.getenv(f"EMAIL_FOLDER_{index}")
+        
+        if not user and not pwd and not folder:
+            break
+            
+        if user and pwd and folder:
+            cuentas.append({
+                "nombre": f"Casilla {index} ({user})",
+                "user": user,
+                "pass": pwd,
+                "folder": folder
+            })
+        else:
+            faltantes = []
+            if not user: faltantes.append(f"EMAIL_USER_{index}")
+            if not pwd: faltantes.append(f"EMAIL_PASS_{index}")
+            if not folder: faltantes.append(f"EMAIL_FOLDER_{index}")
+            print(f"⚠️ Advertencia: Incompleta la configuración para la Casilla {index}. Faltan: {', '.join(faltantes)}")
+        
+        index += 1
+        
+    # Si no se encontraron variables numeradas, intentar con la configuración legacy
+    if not cuentas:
+        legacy_user = os.getenv("EMAIL_USER")
+        legacy_pass = os.getenv("EMAIL_PASS")
+        legacy_folder = os.getenv("EMAIL_FOLDER")
+        if legacy_user and legacy_pass and legacy_folder:
+            cuentas.append({
+                "nombre": f"Casilla Legacy ({legacy_user})",
+                "user": legacy_user,
+                "pass": legacy_pass,
+                "folder": legacy_folder
+            })
+
+    return cuentas
+
+# Validar servidor e imap
 if not EMAIL_SERVER:
-    faltantes.append("EMAIL_SERVER")
-if not EMAIL_FOLDER:
-    faltantes.append("EMAIL_FOLDER")
+    print("❌ Error: Falta definir EMAIL_SERVER en tu archivo .env")
+    sys.exit(1)
 
-if faltantes:
-    print(f"❌ Error: Faltan definir o están vacías las siguientes variables en tu archivo .env: {', '.join(faltantes)}")
+cuentas_correo = obtener_cuentas()
+
+if not cuentas_correo:
+    print("❌ Error: No se encontraron casillas configuradas en el archivo .env. Define EMAIL_USER_1, EMAIL_PASS_1, EMAIL_FOLDER_1, etc.")
     sys.exit(1)
 
 # Configurar argumentos de línea de comandos para las fechas
 parser = argparse.ArgumentParser(
-    description="Descarga facturas PDF desde el servidor de correo Cromosol.",
+    description="Descarga facturas PDF desde los servidores de correo configurados.",
     usage="python descarga_mail.py -d YYYY-MM-DD [-t YYYY-MM-DD]"
 )
 parser.add_argument("--desde", "-d", required=True, help="Fecha inicial en formato YYYY-MM-DD (Requerido)")
@@ -90,7 +132,7 @@ def comprobar_correo_procesado(msg_id, cache, dir_pendientes, dir_procesados, di
         return False
     filenames = cache[msg_id]
     if not filenames:
-        # Si el correo no tiene adjuntos PDF relevantes (la lista está vacía), lo consideramos procesado
+        # Si el correo no tiene adjuntos PDF relevantes, lo consideramos procesado
         return True
     
     # Verificar que todos los adjuntos que se descargaron sigan existiendo en disco
@@ -107,88 +149,94 @@ cache_descargados = cargar_cache()
 
 # Para date_lt necesitamos el día siguiente a la fecha_hasta para que sea inclusivo
 fecha_hasta_exclusivo = fecha_hasta + datetime.timedelta(days=1)
+total_descargas_global = 0
 
-print(f"🔌 Conectando a {EMAIL_SERVER}...")
-try:
-    with MailBox(EMAIL_SERVER, timeout=15).login(EMAIL_USER, EMAIL_PASS) as mailbox:
-        mailbox.folder.set(EMAIL_FOLDER)
-        
-        print(f"🔍 Buscando cabeceras desde {fecha_desde} hasta {fecha_hasta} (inclusive)...")
-        # Consultar mensajes en el rango de fechas (solicitando solo cabeceras primero)
-        query = A(date_gte=fecha_desde, date_lt=fecha_hasta_exclusivo)
-        
-        correos_a_descargar = []
-        mapa_uid_msgid = {}
-        contador_evaluados = 0
-        
-        for msg in mailbox.fetch(query, headers_only=True):
-            contador_evaluados += 1
+print(f"📋 Se procesarán {len(cuentas_correo)} casilla(s) de correo configurada(s).")
+
+for idx, cta in enumerate(cuentas_correo, 1):
+    print(f"\n==========================================")
+    print(f"📬 [{idx}/{len(cuentas_correo)}] Procesando {cta['nombre']}")
+    print(f"==========================================")
+    print(f"🔌 Conectando a {EMAIL_SERVER}...")
+    
+    try:
+        with MailBox(EMAIL_SERVER, timeout=15).login(cta['user'], cta['pass']) as mailbox:
+            mailbox.folder.set(cta['folder'])
             
-            # Obtener el identificador único del correo
-            msg_id_tuple = msg.headers.get('message-id')
-            msg_id = msg_id_tuple[0] if msg_id_tuple else None
-            if not msg_id:
-                msg_id = f"UID_{msg.uid}"
+            print(f"🔍 Buscando cabeceras en carpeta '{cta['folder']}' desde {fecha_desde} hasta {fecha_hasta}...")
+            query = A(date_gte=fecha_desde, date_lt=fecha_hasta_exclusivo)
             
-            msg_id = msg_id.strip()
+            correos_a_descargar = []
+            mapa_uid_msgid = {}
+            contador_evaluados = 0
             
-            # Comprobar si ya existe localmente y en la caché
-            if comprobar_correo_procesado(msg_id, cache_descargados, DIR_PENDIENTES, DIR_PROCESADOS, DIR_ERRORES):
-                # Mensaje de depuración más corto para evitar inundar la consola
-                print(f"   ⏭️ Saltado (ya descargado): Subject: '{msg.subject}' (Msg-ID: {msg_id})")
-                continue
+            for msg in mailbox.fetch(query, headers_only=True):
+                contador_evaluados += 1
                 
-            correos_a_descargar.append(msg.uid)
-            mapa_uid_msgid[msg.uid] = msg_id
-            print(f"   📌 Agendado para descargar: Subject: '{msg.subject}' ({msg.date.strftime('%Y-%m-%d')})")
-            
-        print(f"\n📊 Resumen de evaluación: {contador_evaluados} correos analizados.")
-        print(f"📥 Correos nuevos o que requieren re-descarga: {len(correos_a_descargar)}")
-        
-        contador_descargas = 0
-        
-        # Descargar los correos agendados en un solo lote
-        if correos_a_descargar:
-            criterio_uids = A(uid=correos_a_descargar)
-            print("📦 Iniciando descarga en lote...")
-            
-            for msg in mailbox.fetch(criterio_uids):
-                uid = msg.uid
+                # Obtener el identificador único del correo
                 msg_id_tuple = msg.headers.get('message-id')
-                fallback_msg_id = msg_id_tuple[0] if msg_id_tuple else f"UID_{uid}"
-                msg_id = mapa_uid_msgid.get(uid, fallback_msg_id).strip()
-                print(f"   📧 Descargando adjuntos de: '{msg.subject}'")
+                msg_id = msg_id_tuple[0] if msg_id_tuple else None
+                if not msg_id:
+                    msg_id = f"UID_{msg.uid}"
                 
-                filenames = []
-                try:
-                    for att in msg.attachments:
-                        # Filtrar solo archivos PDF
-                        if att.filename.lower().endswith('.pdf'):
-                            # Verificar si por las dudas ya existe el archivo en alguna carpeta
-                            ruta_pendiente = os.path.join(DIR_PENDIENTES, att.filename)
-                            ruta_procesado = os.path.join(DIR_PROCESADOS, att.filename)
-                            ruta_error = os.path.join(DIR_ERRORES, att.filename)
-                            
-                            if os.path.exists(ruta_pendiente) or os.path.exists(ruta_procesado) or os.path.exists(ruta_error):
-                                print(f"      ⏭️ Saltado adjunto (archivo físico ya existe): {att.filename}")
-                                filenames.append(att.filename)
-                                continue
+                msg_id = msg_id.strip()
+                
+                # Comprobar si ya existe localmente y en la caché
+                if comprobar_correo_procesado(msg_id, cache_descargados, DIR_PENDIENTES, DIR_PROCESADOS, DIR_ERRORES):
+                    print(f"   ⏭️ Saltado (ya descargado): Subject: '{msg.subject}' (Msg-ID: {msg_id})")
+                    continue
+                    
+                correos_a_descargar.append(msg.uid)
+                mapa_uid_msgid[msg.uid] = msg_id
+                print(f"   📌 Agendado para descargar: Subject: '{msg.subject}' ({msg.date.strftime('%Y-%m-%d')})")
+                
+            print(f"\n📊 Resumen de evaluación ({cta['user']}): {contador_evaluados} correos analizados.")
+            print(f"📥 Correos nuevos o que requieren re-descarga: {len(correos_a_descargar)}")
+            
+            contador_descargas = 0
+            
+            # Descargar los correos agendados en un solo lote
+            if correos_a_descargar:
+                criterio_uids = A(uid=correos_a_descargar)
+                print("📦 Iniciando descarga en lote...")
+                
+                for msg in mailbox.fetch(criterio_uids):
+                    uid = msg.uid
+                    msg_id_tuple = msg.headers.get('message-id')
+                    fallback_msg_id = msg_id_tuple[0] if msg_id_tuple else f"UID_{uid}"
+                    msg_id = mapa_uid_msgid.get(uid, fallback_msg_id).strip()
+                    print(f"   📧 Descargando adjuntos de: '{msg.subject}'")
+                    
+                    filenames = []
+                    try:
+                        for att in msg.attachments:
+                            if att.filename.lower().endswith('.pdf'):
+                                ruta_pendiente = os.path.join(DIR_PENDIENTES, att.filename)
+                                ruta_procesado = os.path.join(DIR_PROCESADOS, att.filename)
+                                ruta_error = os.path.join(DIR_ERRORES, att.filename)
                                 
-                            with open(ruta_pendiente, 'wb') as f:
-                                f.write(att.payload)
-                            print(f"      ✅ Descargado adjunto: {att.filename} ({att.content_type})")
-                            filenames.append(att.filename)
-                            contador_descargas += 1
-                    
-                    # Actualizar e incrementalmente guardar la caché
-                    cache_descargados[msg_id] = filenames
-                    guardar_cache(cache_descargados)
-                    
-                except Exception as file_err:
-                    print(f"      ❌ Error al guardar adjuntos de correo UID {uid}: {file_err}")
-                    
-        print(f"✨ Proceso de descarga finalizado. Total descargados: {contador_descargas}")
+                                if os.path.exists(ruta_pendiente) or os.path.exists(ruta_procesado) or os.path.exists(ruta_error):
+                                    print(f"      ⏭️ Saltado adjunto (archivo físico ya existe): {att.filename}")
+                                    filenames.append(att.filename)
+                                    continue
+                                    
+                                with open(ruta_pendiente, 'wb') as f:
+                                    f.write(att.payload)
+                                print(f"      ✅ Descargado adjunto: {att.filename} ({att.content_type})")
+                                filenames.append(att.filename)
+                                contador_descargas += 1
+                        
+                        # Actualizar e incrementalmente guardar la caché
+                        cache_descargados[msg_id] = filenames
+                        guardar_cache(cache_descargados)
+                        
+                    except Exception as file_err:
+                        print(f"      ❌ Error al guardar adjuntos de correo UID {uid}: {file_err}")
+                        
+            total_descargas_global += contador_descargas
+            print(f"✨ Casilla {cta['user']} finalizada. Total descargados: {contador_descargas}")
 
-except Exception as e:
-    print(f"🔥 Error en la conexión/descarga de correo: {e}")
-    sys.exit(1)
+    except Exception as e:
+        print(f"🔥 Error en la conexión/descarga de correo para {cta['user']}: {e}")
+
+print(f"\n🏁 Proceso completo finalizado en todas las casillas. Total general descargados: {total_descargas_global}")

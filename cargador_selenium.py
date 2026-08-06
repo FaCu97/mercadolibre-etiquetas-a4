@@ -502,7 +502,11 @@ def procesar_lote(driver):
     with open(ARCHIVO_JSON, 'r', encoding='utf-8') as f:
         facturas = json.load(f)
 
+    # Ordenar comprobantes por id_contribuyente para evitar cambios innecesarios de sucursal
+    facturas.sort(key=lambda item: str(item.get("cabecera", {}).get("id_contribuyente", "0")))
+
     wait = WebDriverWait(driver, 10)
+
     inicializar_log_selenium() # Inicializar el log al inicio del procesamiento del lote
     
     # --- NUEVO: Cargar historial para evitar duplicados ---

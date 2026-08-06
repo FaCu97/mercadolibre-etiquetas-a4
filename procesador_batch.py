@@ -610,13 +610,15 @@ def ejecutar_lote():
                 registrar_log(nombre, prov, tipo, nro, "OK", "Procesado correctamente")
                 lote_exitoso.append(datos)
 
-    # Guardar JSON Final
+    # Guardar JSON Final (Ordenado por id_contribuyente para minimizar cambios de sucursal)
     if lote_exitoso:
+        lote_exitoso.sort(key=lambda item: item.get("cabecera", {}).get("id_contribuyente", "0"))
         with open(ARCHIVO_JSON_FINAL, 'w', encoding='utf-8') as f:
             json.dump(lote_exitoso, f, indent=4, ensure_ascii=False)
-        print(f"\n✨ Proceso terminado. {len(lote_exitoso)} facturas listas en '{ARCHIVO_JSON_FINAL}'")
+        print(f"\n✨ Proceso terminado. {len(lote_exitoso)} facturas ordenadas por contribuyente y listas en '{ARCHIVO_JSON_FINAL}'")
     else:
         print("\n⚠️ No se generaron facturas exitosas.")
+
 
 if __name__ == "__main__":
     ejecutar_lote()
