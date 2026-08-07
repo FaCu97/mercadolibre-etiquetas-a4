@@ -22,7 +22,7 @@ class InvoiceService:
             parser = self.dispatcher.get_parser(pdf_path)
             datos = parser.extract(pdf_path)
             
-            # Obtener o crear proveedor priorizando búsqueda por CUIT
+            # Buscar únicamente proveedores PREVIAMENTE HOMOLOGADOS en SQLite (con id_cianbox o CUIT registrado)
             prov_cuit = str(datos.get("cuit_proveedor", "")).replace("-", "").strip()
             prov_nombre = datos.get("proveedor", "CROMOSOL").upper()
             
@@ -30,28 +30,41 @@ class InvoiceService:
             if prov_cuit:
                 proveedor = self.db.query(Proveedor).filter_by(cuit=prov_cuit).first()
 
-            if not proveedor:
-                # Búsqueda secundaria por nombre de cianbox o nombre de referencia
+            if not proveedor and prov_nombre:
+                # 2. Razón Social
                 proveedor = self.db.query(Proveedor).filter(
-                    (Proveedor.nombre_cianbox.ilike(prov_nombre)) | 
+                    (Proveedor.razon_social.ilike(prov_nombre)) |
                     (Proveedor.nombre.ilike(prov_nombre))
                 ).first()
 
-            if not proveedor:
-                proveedor = Proveedor(
-                    nombre=prov_nombre,
-                    cuit=prov_cuit or None,
-                    nombre_cianbox=prov_nombre,
-                    razon_social=prov_nombre,
-                    parser_type="genai"
-                )
-                self.db.add(proveedor)
-                self.db.commit()
-                self.db.refresh(proveedor)
-            elif prov_cuit and not proveedor.cuit:
-                # Si existía por nombre pero le faltaba la CUIT, se la vinculamos
-                proveedor.cuit = prov_cuit
-                self.db.commit()
+            if not proveedor and prov_nombre:
+                # 3. Nombre comercial / nombre_cianbox
+                proveedor = self.db.query(Proveedor).filter(
+                    (Proveedor.nombre_cianbox.ilike(prov_nombre))
+                ).first()
+
+
+            # REGLA DE NEGOCIO: Si el proveedor NO está homologado en Cianbox, la factura queda pausada
+            requiere_homologacion = False
+            if not proveedor or not proveedor.id_cianbox:
+                requiere_homologacion = True
+                if not proveedor:
+                    # Se crea como registro preliminar no homologado
+                    proveedor = Proveedor(
+                        nombre=prov_nombre,
+                        cuit=prov_cuit or None,
+                        nombre_cianbox=prov_nombre,
+                        razon_social=prov_nombre,
+                        id_cianbox=None,  # Sin ID Cianbox -> No homologado
+                        parser_type="genai"
+                    )
+                    self.db.add(proveedor)
+                    self.db.commit()
+                    self.db.refresh(proveedor)
+
+            # Estado de carga: PENDIENTE_CARGA (si está homologado) vs REQUIERE_PROVEEDOR_CIANBOX (si falta alta en Cianbox)
+            estado_inicial = "REQUIERE_PROVEEDOR_CIANBOX" if requiere_homologacion else "PENDIENTE_CARGA"
+
 
 
             # Verificar si la factura ya existe
@@ -87,12 +100,16 @@ class InvoiceService:
                 total=datos["total"],
                 archivo_pdf_path=pdf_path,
                 archivo_nombre=archivo_nombre,
-                estado="PENDIENTE_CARGA",
+                estado=estado_inicial,
                 fecha_procesamiento=datetime.utcnow()
             )
             self.db.add(factura)
             self.db.commit()
             self.db.refresh(factura)
+
+            if requiere_homologacion:
+                print(f"⚠️ Factura {num_comp} pausada: El proveedor '{prov_nombre}' (CUIT: {prov_cuit or 'S/N'}) no está homologado en Cianbox. Estado: REQUIERE_PROVEEDOR_CIANBOX")
+
 
             # Insertar Ítems
             for item in datos.get("items", []):

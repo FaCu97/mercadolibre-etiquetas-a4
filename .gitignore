@@ -6,9 +6,14 @@ data/
 # Archivos de prueba temporales
 test_*.py
 
-# Caché de compilación de Python y variables de entorno
+# Cache de Python
 __pycache__/
 *.pyc
-venv/
+*.pyo
+
+# Archivos Excel de datos comerciales
+*.xlsx
+*.xls
+
 .DS_Store
 .env

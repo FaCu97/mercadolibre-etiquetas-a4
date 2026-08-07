@@ -13,10 +13,12 @@ def main():
     parser = argparse.ArgumentParser(description="Orquestador Central de Facturación")
     
     parser.add_argument("--procesar-file", type=str, help="Procesa un archivo PDF específico en el acto")
+    parser.add_argument("--importar-proveedores", type=str, help="Importa/actualiza proveedores desde el Excel de Cianbox (ej: --importar-proveedores proveedores.xlsx)")
     parser.add_argument("--cargar-proveedor", type=str, help="Ejecuta la carga nocturna/inmediata filtrada por proveedor")
     parser.add_argument("--cargar-id", type=str, help="Carga facturas por su ID de SQLite (ej: 5 o 5,6,7,8)")
     parser.add_argument("--cargar-ahora", action="store_true", help="Fuerza la ejecución de carga nocturna inmediatamente")
     parser.add_argument("--set-horario", type=str, help="Cambia el horario nocturno en SQL (Formato: HH:MM, ej: 03:30)")
+
     
     # Nuevos argumentos de filtrado por fecha para descarga de mail
     parser.add_argument("--descargar-rango", action="store_true", help="Descarga e ingesta facturas por rango de fechas")
@@ -27,7 +29,20 @@ def main():
     args = parser.parse_args()
     orchestrator = CentralOrchestrator()
 
+    if args.importar_proveedores:
+        from db.database import SessionLocal
+        from services.provider_import_service import importar_proveedores_excel
+        db = SessionLocal()
+        try:
+            importar_proveedores_excel(db, args.importar_proveedores)
+        except Exception as e:
+            print(f"❌ Error al importar proveedores desde Excel: {e}")
+        finally:
+            db.close()
+        return
+
     if args.set_fecha_desde:
+
         try:
             d = datetime.strptime(args.set_fecha_desde, "%Y-%m-%d").date()
             orchestrator.set_config_valor("FECHA_DESDE_MAIL", d.strftime("%Y-%m-%d"))
