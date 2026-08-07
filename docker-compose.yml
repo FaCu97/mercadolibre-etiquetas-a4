@@ -1,0 +1,34 @@
+services:
+  # 1. Servicio de Escucha de Mail en Tiempo Real (Liviano, sin Chromium, ~120MB)
+  mail_listener:
+    build:
+      context: .
+      dockerfile: Dockerfile.listener
+    container_name: facturas_mail_listener
+    restart: unless-stopped
+    command: python services/mail_listener.py
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+
+
+  # 2. Servicio Programador Nocturno y Carga Selenium (Incluye Chromium)
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.selenium
+    container_name: facturas_scheduler
+    restart: unless-stopped
+    command: python services/scheduler_service.py
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+
+    depends_on:
+      - mail_listener

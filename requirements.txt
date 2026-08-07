@@ -1,0 +1,11 @@
+pdfplumber>=0.10.3
+selenium>=4.18.1
+imap-tools>=1.5.0
+python-dotenv>=1.0.1
+google-genai>=0.1.1
+fastapi>=0.110.0
+uvicorn>=0.28.0
+sqlalchemy>=2.0.28
+pydantic>=2.6.4
+apscheduler>=3.10.4
+python-telegram-bot>=21.0.1

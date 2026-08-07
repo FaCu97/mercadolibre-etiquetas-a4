@@ -1,21 +1,14 @@
-# Ignorar logs de auditoría generados por el procesador
-logs/audit_log.csv
-lote_cianbox.json
-/02_procesados/*
-/03_errores/*
-/01_pendientes/*
-/01_logs/*
-.DS_Store
-logs/errores.csv
-logs/procesadas.csv
-logs/descargados_mails.json
+# Ignorar archivos PDF de comprobantes y base de datos local SQLite
+comprobantes/
+data/
+*.db
 
-# Caché de compilación de Python
+# Archivos de prueba temporales
+test_*.py
+
+# Caché de compilación de Python y variables de entorno
 __pycache__/
 *.pyc
-
-# Entorno virtual de Python
 venv/
-
 .DS_Store
 .env

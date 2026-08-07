@@ -17,14 +17,9 @@ USUARIO = os.getenv("CIANBOX_USER")
 PASSWORD = os.getenv("CIANBOX_PASS")
 URL_LOGIN = os.getenv("URL_LOGIN")
 
-ARCHIVO_JSON = "lote_cianbox.json"
 CARPETA_BASE = os.getcwd()
-DIR_LOGS = os.path.join(CARPETA_BASE, "logs")
-DIR_PROCESADOS = os.path.join(CARPETA_BASE, "02_procesados")
-DIR_ERRORES = os.path.join(CARPETA_BASE, "03_errores")
-ARCHIVO_LOG_CSV = os.path.join(DIR_LOGS, "audit_log.csv")
-ARCHIVO_PROCESADAS_CSV = os.path.join(DIR_LOGS, "procesadas.csv")
-ARCHIVO_ERRORES_CSV = os.path.join(DIR_LOGS, "errores.csv")
+DIR_COMPROBANTES = os.path.join(CARPETA_BASE, "comprobantes")
+
 
 # ==============================================================================
 # 1. CONSTANTES JS (MEJORADAS PARA EVITAR "UNDEFINED")
@@ -62,15 +57,48 @@ JS_BUSCAR_PROVEEDOR = """
                 inputVisual.value = data.nombre || data.razon_social || termino;
                 inputVisual.dispatchEvent(new Event('input', { bubbles: true }));
                 inputVisual.dispatchEvent(new Event('change', { bubbles: true }));
-                if (window.jQuery) {
-                    window.jQuery(inputVisual).change();
-                    window.jQuery(inputVisual).trigger('change');
-                }
-            }
             callback("OK");
         } else { callback("ERROR"); }
     }).catch(e => callback("EXCEPTION: " + e));
 """
+
+JS_SET_PROVEEDOR_DIRECTO = """
+    var callback = arguments[arguments.length - 1];
+    var idProveedor = arguments[0];
+    var nombreProveedor = arguments[1];
+
+    try {
+        var inputHidden = document.querySelector('input[name="id_proveedor"]');
+        if (inputHidden) {
+            inputHidden.value = idProveedor;
+            inputHidden.dispatchEvent(new Event('input', { bubbles: true }));
+            inputHidden.dispatchEvent(new Event('change', { bubbles: true }));
+            if (window.jQuery) {
+                window.jQuery(inputHidden).change();
+                window.jQuery(inputHidden).trigger('change');
+            }
+        }
+
+        var inputVisual = document.querySelector('#acomp_proveedores input[type="text"]');
+        if (!inputVisual) {
+            inputVisual = document.querySelector('input.fc.required[autocomplete="no_auto"]');
+        }
+        if (inputVisual) {
+            inputVisual.value = nombreProveedor;
+            inputVisual.dispatchEvent(new Event('input', { bubbles: true }));
+            inputVisual.dispatchEvent(new Event('change', { bubbles: true }));
+            if (window.jQuery) {
+                window.jQuery(inputVisual).change();
+                window.jQuery(inputVisual).trigger('change');
+            }
+        }
+        callback("OK");
+    } catch(e) {
+        callback("EXCEPTION: " + e);
+    }
+"""
+
+
 
 JS_BUSCAR_PRODUCTO = """
     var callback = arguments[arguments.length - 1];
@@ -207,12 +235,31 @@ MAPEO_PROVINCIAS = {
 
 def iniciar_driver():
     options = webdriver.ChromeOptions()
-    options.add_argument("--start-maximized")
-    # --- MODO HEADLESS (Descomentar para ejecutar en segundo plano) ---
-    # options.add_argument("--headless")
-    # options.add_argument("--disable-gpu")
-    # options.add_argument("--window-size=1920,1080") # Necesario para evitar errores de renderizado
+    
+    # Permitir modo visible (GUI) si HEADLESS se pasa como 'false' o '0'
+    use_headless = os.getenv("HEADLESS", "true").lower() in ["true", "1", "yes"]
+    if use_headless:
+        options.add_argument("--headless=new")
+        
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+
+    chrome_bin = os.getenv("CHROME_BIN", "/usr/bin/chromium")
+    chromedriver_path = os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
+
+    if os.path.exists(chrome_bin):
+        options.binary_location = chrome_bin
+
+    if os.path.exists(chromedriver_path):
+        from selenium.webdriver.chrome.service import Service
+        service = Service(executable_path=chromedriver_path)
+        return webdriver.Chrome(service=service, options=options)
+
     return webdriver.Chrome(options=options)
+
+
 
 def limpiar_monto_para_input(monto_str):
     """
@@ -235,18 +282,32 @@ def click_seguro(driver, selector):
 
 def escribir_teclado(driver, selector, texto):
     """
-    Escribe el valor simulando pulsaciones de teclado físicamente.
-    Útil para campos con máscaras de entrada (como la fecha) o inputs con autocompletar.
+    Escribe el valor de forma segura esperando que el elemento sea interactuable,
+    con fallback por JavaScript en caso de overlays flotantes de notificación.
     """
-    elemento = driver.find_element(*selector)
-    elemento.click()
+    wait = WebDriverWait(driver, 5)
+    try:
+        elemento = wait.until(EC.element_to_be_clickable(selector))
+        elemento.click()
+        time.sleep(0.05)
+        elemento.send_keys(Keys.CONTROL + "a")
+        elemento.send_keys(Keys.BACK_SPACE)
+        valor_limpio = limpiar_monto_para_input(str(texto))
+        elemento.send_keys(valor_limpio)
+        elemento.send_keys(Keys.TAB)
+    except Exception:
+        # Fallback silencioso por JS si hay un cartel flotante sobre el campo
+        elemento = driver.find_element(*selector)
+        valor_limpio = limpiar_monto_para_input(str(texto))
+        driver.execute_script(
+            "arguments[0].focus(); "
+            "arguments[0].value = arguments[1]; "
+            "arguments[0].dispatchEvent(new Event('input', { bubbles: true })); "
+            "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+            elemento, valor_limpio
+        )
     time.sleep(0.05)
-    elemento.send_keys(Keys.CONTROL + "a")
-    elemento.send_keys(Keys.BACK_SPACE)
-    valor_limpio = limpiar_monto_para_input(str(texto))
-    elemento.send_keys(valor_limpio)
-    elemento.send_keys(Keys.TAB)
-    time.sleep(0.05)
+
 
 def escribir_seguro(driver, selector, texto):
     """
@@ -298,17 +359,6 @@ def reiniciar_modal(driver):
     wait.until(EC.presence_of_element_located(SELECTORES["fecha"]))
     print("         ✅ Formulario de alta reabierto.")
 
-def inicializar_log_selenium():
-    """Asegura que la carpeta de logs y el archivo CSV existan."""
-    if not os.path.exists(DIR_LOGS):
-        os.makedirs(DIR_LOGS)
-    
-    for archivo in [ARCHIVO_LOG_CSV, ARCHIVO_PROCESADAS_CSV, ARCHIVO_ERRORES_CSV]:
-        if not os.path.exists(archivo):
-            with open(archivo, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow(["Fecha", "Archivo", "Proveedor", "Tipo", "Numero", "Estado", "Motivo", "Diferencia"])
-
 def calcular_similitud_palabras(pdf_desc, cian_desc):
     """Calcula el porcentaje de palabras clave del PDF que coinciden con las de Cianbox."""
     def obtener_palabras(texto):
@@ -327,22 +377,6 @@ def calcular_similitud_palabras(pdf_desc, cian_desc):
         
     coincidencias = palabras_pdf.intersection(palabras_cian)
     return len(coincidencias) / len(palabras_pdf)
-
-def registrar_log_selenium(cabecera_data, estado, motivo, diferencia="0.00"):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    archivo_ref = f"Selenium_Carga_{cabecera_data.get('proveedor', 'N/A')}_{cabecera_data.get('numero', 'N/A')}"
-    row = [timestamp, archivo_ref, cabecera_data.get('proveedor', 'N/A'), cabecera_data.get('tipo', 'N/A'), cabecera_data.get('numero', 'N/A'), estado, motivo, diferencia]
-    
-    if estado in ["OK", "CARGA_EXITOSA"]:
-        target = ARCHIVO_PROCESADAS_CSV
-    elif "ERROR" in estado or "RECHAZADO" in estado:
-        target = ARCHIVO_ERRORES_CSV
-    else:
-        target = ARCHIVO_LOG_CSV
-
-    with open(target, 'a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(row)
 
 def login(driver):
     print("🔑 Logueando...")
@@ -469,344 +503,300 @@ def navegar_una_sola_vez(driver):
     wait.until(EC.presence_of_element_located(SELECTORES["fecha"]))
     print("✅ Formulario listo. Iniciando bucle de carga...")
 
-def cargar_historial_cargas_exitosas():
-    """
-    Lee procesadas.csv y retorna un set con las claves de facturas ya cargadas en Cianbox.
-    Clave: PROVEEDOR_TIPO_NUMERO
-    """
-    historial = set()
-    if not os.path.exists(ARCHIVO_PROCESADAS_CSV):
-        return historial
 
+def cargar_facturas_cianbox(proveedor_filtro: str = None, factura_id: int = None, factura_ids: list = None):
+    """
+    Función de entrada expuesta para el Orquestador/Scheduler.
+    Lee facturas pendientes desde SQLite e inyecta en Cianbox usando Selenium.
+    """
+    from sqlalchemy.orm import Session
+    from db.database import SessionLocal
+    from db.models import Factura, Proveedor, ProcesoLog
+    from datetime import datetime
+
+    db: Session = SessionLocal()
     try:
-        with open(ARCHIVO_PROCESADAS_CSV, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            next(reader, None) # Saltar encabezado
-            for row in reader:
-                if len(row) < 6: continue
-                # Estructura: Fecha, Archivo, Proveedor, Tipo, Numero, Estado, ...
-                prov, tipo, nro, estado = row[2], row[3], row[4], row[5]
-                
-                # Solo nos importa si ya fue cargada exitosamente en Cianbox
-                if estado == "CARGA_EXITOSA":
-                    key = f"{prov.strip().upper()}_{tipo.strip().upper()}_{nro.strip()}"
-                    historial.add(key)
-        print(f"📚 Historial de cargas: {len(historial)} comprobantes ya subidos.")
-    except Exception as e:
-        print(f"⚠️ Error leyendo historial de cargas: {e}")
-    
-    return historial
+        query = db.query(Factura).filter_by(estado="PENDIENTE_CARGA")
+        
+        if factura_ids:
+            query = query.filter(Factura.id.in_(factura_ids))
+        elif factura_id:
+            query = query.filter_by(id=factura_id)
+        elif proveedor_filtro:
+            prov = db.query(Proveedor).filter(Proveedor.nombre.ilike(f"%{proveedor_filtro}%")).first()
+            if prov:
+                query = query.filter_by(proveedor_id=prov.id)
+            else:
+                print(f"⚠️ No se encontró el proveedor '{proveedor_filtro}' en SQLite.")
+                return
 
-def procesar_lote(driver):
-    if not os.path.exists(ARCHIVO_JSON): return
-    with open(ARCHIVO_JSON, 'r', encoding='utf-8') as f:
-        facturas = json.load(f)
+        facturas = query.all()
 
-    # Ordenar comprobantes por id_contribuyente para evitar cambios innecesarios de sucursal
-    facturas.sort(key=lambda item: str(item.get("cabecera", {}).get("id_contribuyente", "0")))
+        if not facturas:
+            print("ℹ️ No hay facturas pendientes de carga en SQLite.")
+            return
+
+        print(f"🚀 Iniciando carga Selenium para {len(facturas)} factura(s) pendiente(s)...")
+
+        # Convertir modelos SQLAlchemy a lote dict esperado por procesar_lote
+        lote_facturas = []
+        for f in facturas:
+            tipo_full = f.tipo_comprobante.upper() if f.tipo_comprobante else "FACTURA A"
+            parts = tipo_full.rsplit(" ", 1)
+            tipo_str = parts[0] if len(parts) > 1 else "FACTURA"
+            letra_str = parts[1] if len(parts) > 1 else "A"
+
+            # Reconstruir lista de percepciones
+            percepciones_list = []
+            if f.percepciones and f.percepciones > 0:
+                percepciones_list.append({
+                    "jurisdiccion": "Capital Federal",  # Valor por defecto
+                    "monto": str(f.percepciones).replace(".", ",")
+                })
+
+            lote_facturas.append({
+                "_sql_id": f.id,
+                "cabecera": {
+                    "proveedor": f.proveedor.nombre if f.proveedor else "CROMOSOL",
+                    "id_cianbox": f.proveedor.id_cianbox if (f.proveedor and f.proveedor.id_cianbox) else None,
+                    "nombre_cianbox": f.proveedor.nombre_cianbox if (f.proveedor and f.proveedor.nombre_cianbox) else (f.proveedor.nombre if f.proveedor else "CROMOSOL"),
+                    "tipo": tipo_str,
+                    "letra": letra_str,
+                    "fecha": f.fecha_emision or datetime.now().strftime("%d/%m/%Y"),
+                    "puntoVenta": f.numero_comprobante.split("-")[0] if "-" in f.numero_comprobante else "0000",
+                    "numero": f.numero_comprobante.split("-")[1] if "-" in f.numero_comprobante else f.numero_comprobante,
+                    "total": str(f.total).replace(".", ","),
+                    "percepciones_iibb": percepciones_list,
+                    "mueve_stock": True
+                },
+
+                "productos": [
+                    {
+                        "codigo": item.codigo or "",
+                        "descripcion": item.descripcion,
+                        "cantidad": str(int(item.cantidad)),
+                        "precio": str(item.precio_unitario).replace(".", ","),
+                        "iva": "21.00",
+                        "descuento": "0,00"
+                    } for item in f.items
+                ]
+            })
+
+
+        driver = iniciar_driver()
+        try:
+            login(driver)
+            procesar_lote_desde_sql(driver, lote_facturas, db)
+        finally:
+            driver.quit()
+
+    finally:
+        db.close()
+
+def procesar_lote_desde_sql(driver, facturas_lote, db):
+    """Ejecuta la carga invocando el procesador de lotes validado de Selenium."""
+    procesar_lote_en_memoria(driver, facturas_lote, db)
+
+
+def procesar_lote_en_memoria(driver, facturas, db=None):
+    """Procesa una lista de facturas en memoria usando toda la lógica original de sucursal, JS_BUSCAR_PRODUCTO, carga genérica y notificaciones."""
 
     wait = WebDriverWait(driver, 10)
-
-    inicializar_log_selenium() # Inicializar el log al inicio del procesamiento del lote
-    
-    # --- NUEVO: Cargar historial para evitar duplicados ---
-    historial_cargadas = cargar_historial_cargas_exitosas()
-
-    # --- PASO 1: NAVEGACIÓN INICIAL (FUERA DEL BUCLE) ---
     navegar_una_sola_vez(driver)
 
-    # --- PASO 2: BUCLE DE CARGA ---
     for i, factura in enumerate(facturas):
         cab = factura["cabecera"]
-        
-        # --- CHEQUEO DE DUPLICADOS LOCAL ---
-        key = f"{cab['proveedor'].strip().upper()}_{cab['tipo'].strip().upper()}_{cab['numero'].strip()}"
-        if key in historial_cargadas:
-            print(f"⏭️ SALTADO: {cab['numero']} (Ya figura como CARGA_EXITOSA)")
-            continue
-            
-        print(f"\n📄 [{i+1}/{len(facturas)}] Procesando: {cab['numero']}")
+        print(f"\n📄 [{i+1}/{len(facturas)}] Procesando Carga en Cianbox: {cab['numero']}")
         intentos = 3
         for intento in range(intentos):
             try:
-
-                # --- SELECCIONAR SUCURSAL SEGÚN CONTRIBUYENTE ---
+                # 1. Sucursal
                 id_contribuyente = str(cab.get("id_contribuyente", "0"))
                 sucursal_req = "1318 SRL" if id_contribuyente == "1" else "AV. WARNES 1318"
-
                 status_sucursal = asegurar_sucursal(driver, sucursal_req)
-                if status_sucursal == "FAILED":
-                    print(f"   ❌ No se pudo establecer la sucursal {sucursal_req}. Saltando factura.")
-                    break
-                elif status_sucursal == "CHANGED":
-                    # Si cambió de sucursal, la página se recargó y cerró el modal. Reabrimos.
+                if status_sucursal == "CHANGED":
                     navegar_una_sola_vez(driver)
 
-                # A. PROVEEDOR (JS)
+                # 2. Proveedor (Inyección directa por id_cianbox si existe, o búsqueda de fallback)
                 wait.until(EC.presence_of_element_located((By.NAME, "id_proveedor")))
-                res_prov = driver.execute_async_script(JS_BUSCAR_PROVEEDOR, cab["proveedor"])
-                if "ERROR" in res_prov:
+                id_cian = cab.get("id_cianbox")
+                nom_cian = cab.get("nombre_cianbox") or cab.get("proveedor")
+                
+                if id_cian:
+                    print(f"   🏢 Inyectando proveedor directo por ID Cianbox ({id_cian} - {nom_cian})...")
+                    res_prov = driver.execute_async_script(JS_SET_PROVEEDOR_DIRECTO, str(id_cian), str(nom_cian))
+                else:
+                    print(f"   🔍 Buscando proveedor vía AJAX (Fallback): '{cab['proveedor']}'...")
+                    res_prov = driver.execute_async_script(JS_BUSCAR_PROVEEDOR, cab["proveedor"])
+
+                if "ERROR" in str(res_prov):
                     print("   ❌ Proveedor no encontrado.")
-                    registrar_log_selenium(cab, "ERROR_PROVEEDOR", "Proveedor no encontrado en Cianbox.")
                     break
 
-                # B. CABECERA
-                # Tip: Como es "Nueva Compra", los campos están limpios, pero por seguridad limpiamos igual
-                # Ajuste Máscara: Cianbox tiene el '20' fijo (ej: __/__/20__). Enviamos ddmmyy (180226).
-                fecha_dt = datetime.strptime(cab["fecha"], "%d/%m/%Y")
+
+
+                # 3. Cabecera
+                fecha_dt = datetime.strptime(cab["fecha"], "%d/%m/%Y") if "/" in cab["fecha"] else datetime.now()
                 fecha_formateada = fecha_dt.strftime("%d%m%y")
                 escribir_teclado(driver, SELECTORES["fecha"], fecha_formateada)
                 escribir_teclado(driver, SELECTORES["pv"], cab["puntoVenta"])
                 escribir_teclado(driver, SELECTORES["numero"], cab["numero"])
 
-                # Selects
-                val_tipo = MAPEO_COMPROBANTES.get(cab["tipo"].upper(), "1") 
-                val_letra = MAPEO_LETRAS.get(cab["letra"].upper(), "1")     
+                val_tipo = MAPEO_COMPROBANTES.get(cab["tipo"].upper(), "1")
+                val_letra = MAPEO_LETRAS.get(cab["letra"].upper(), "1")
                 Select(driver.find_element(*SELECTORES["select_tipo"])).select_by_value(val_tipo)
                 Select(driver.find_element(*SELECTORES["select_letra"])).select_by_value(val_letra)
 
-                # Select Contribuyente
-                val_contribuyente = str(cab.get("id_contribuyente", "0"))
-                Select(driver.find_element(*SELECTORES["select_contribuyente"])).select_by_value(val_contribuyente)
+                time.sleep(0.6)
 
-                # Pausa para asegurar que el cambio de tipo de comprobante no resetee el campo de stock
-                time.sleep(0.5)
+                # --- VALIDACIÓN TEMPRANA DE DUPLICADO (DESPUÉS DE INGRESAR NÚMERO/COMPROBANTE) ---
+                div_dup_early = driver.find_elements(By.ID, "mb_duplicated")
+                if div_dup_early:
+                    style_attr = div_dup_early[0].get_attribute("style") or ""
+                    # Si el style no es display:none o si el texto del div no está vacío y es visible
+                    if "display: none" not in style_attr and "display:none" not in style_attr and div_dup_early[0].text.strip():
+                        texto_dup_early = div_dup_early[0].text.replace("\n", " ").strip()
+                        print(f"   ⛔ Factura Duplicada en Cianbox (Detectada al tipear número): {texto_dup_early}")
+                        reiniciar_modal(driver)
+                        
+                        sql_id = factura.get("_sql_id")
+                        if sql_id and db:
+                            from db.models import Factura, ProcesoLog
+                            f_rec = db.query(Factura).get(sql_id)
+                            if f_rec:
+                                f_rec.estado = "CARGADA_CIANBOX"
+                                f_rec.motivo_error = f"Comprobante duplicado en Cianbox: {texto_dup_early}"
+                                log = ProcesoLog(
+                                    factura_id=f_rec.id,
+                                    nivel="WARNING",
+                                    mensaje=f"Comprobante omitido por duplicidad detectada en cabecera: {texto_dup_early}"
+                                )
+                                db.add(log)
+                                db.commit()
+                        break
 
-                # Control de Stock (NC Financieras vs Devolución Mercadería)
-                mueve_stock = cab.get("mueve_stock", True)
-                print(f"      📦 Configuración de Stock: {'MUEVE STOCK (toda_sr)' if mueve_stock else 'NO MUEVE STOCK (no_stock)'}")
 
-                select_stock = Select(driver.find_element(*SELECTORES["select_stock"]))
-                if not mueve_stock:
-                    select_stock.select_by_value("no_stock")
-                else:
-                    # Default: Mueve stock (toda_sr = En su totalidad, SIN Remito)
-                    select_stock.select_by_value("toda_sr")
-
-                # C. PRODUCTOS
-                mismatch_detectado = False
-                detalle_mismatch = ""
+                # 4. Productos (Manejo de items vinculados vs no vinculados/genéricos)
                 for prod in factura["productos"]:
-                    # 1. Buscar y Asignar ID (JS)
                     res_prod = driver.execute_async_script(JS_BUSCAR_PRODUCTO, prod["codigo"])
-
-                    if "NOT_FOUND" in res_prod or "ERROR" in res_prod:
-                        # CASO: No existe o no coincide exactamente.
-                        # Estrategia: Cargar como ítem de texto (sin ID asociado)
-                        print(f"   ⚠️ Item {prod['codigo']} no vinculado (Carga Genérica).")
-                        registrar_log_selenium(cab, "ITEM_GENERICO", f"Código '{prod['codigo']}' cargado sin vincular a stock.")
-
-                        # Escribimos manualmente la descripción del PDF en el input visual
+                    if "NOT_FOUND" in str(res_prod) or "ERROR" in str(res_prod):
+                        # CASO: Producto no encontrado en stock Cianbox -> Carga genérica manual
                         desc_manual = f"{prod['codigo']} {prod['descripcion']}"
                         escribir_teclado(driver, (By.CSS_SELECTOR, ".box_main_field"), desc_manual)
-
-                    else:
-                        # CASO: Encontrado y vinculado
-                        parts = res_prod.split("|")
-                        nombre_prod_cian = parts[1] if len(parts) > 1 else "S/D"
-                        desc_prod_cian = parts[2] if len(parts) > 2 else ""
-
-                        # Calcular similitud de descripción para alertar discrepancias de código (ej. choques de EANs o códigos cortos)
-                        similitud = calcular_similitud_palabras(prod["descripcion"], desc_prod_cian or nombre_prod_cian)
-                        if similitud == 0.0:
-                            mismatch_detectado = True
-                            detalle_mismatch = f"Código {prod['codigo']}: PDF '{prod['descripcion']}' vs Cianbox '{nombre_prod_cian} {desc_prod_cian}'"
-                            break  # Abortar carga de productos de esta factura de inmediato
-                        elif nombre_prod_cian != prod['codigo']:
-                            registrar_log_selenium(cab, "PRODUCTO_OK", f"Código PDF: {prod['codigo']} -> Cianbox: {nombre_prod_cian}")
-
-                    # 2. Cantidad y Precio
+                    
                     escribir_seguro(driver, SELECTORES["cant"], prod["cantidad"])
                     precio_limpio = limpiar_monto_para_input(prod["precio"])
                     escribir_seguro(driver, SELECTORES["precio"], precio_limpio)
-
-                    # 3. Agregar
                     driver.find_element(*SELECTORES["btn_add"]).click()
 
-                    # Esperar a que se añada el producto (por ejemplo, que el input visual se vacíe al agregarse)
                     try:
                         WebDriverWait(driver, 3, poll_frequency=0.1).until(
                             lambda d: d.find_element(By.CSS_SELECTOR, ".box_main_field").get_attribute("value") == ""
                         )
                     except:
-                        time.sleep(0.1)
+                        time.sleep(0.2)
 
-                # Si detectamos un producto sospechoso, cancelamos y movemos el PDF a la carpeta de errores
-                if mismatch_detectado:
-                    print(f"   ❌ RECHAZADO EN CARGA (PRODUCTO SOSPECHOSO): {detalle_mismatch}")
-                    registrar_log_selenium(cab, "RECHAZADO_SOSPECHOSO", f"Rechazado en carga por sospecha de producto incorrecto: {detalle_mismatch}")
-
-                    # Mover el archivo PDF de 02_procesados a 03_errores
-                    nombre_pdf = cab.get("archivo")
-                    if nombre_pdf:
-                        ruta_ok = os.path.join(DIR_PROCESADOS, nombre_pdf)
-                        ruta_error = os.path.join(DIR_ERRORES, nombre_pdf)
-                        if os.path.exists(ruta_ok):
-                            try:
-                                os.rename(ruta_ok, ruta_error)
-                                print(f"      📁 PDF movido de procesados a errores: {nombre_pdf}")
-                            except Exception as file_err:
-                                print(f"      ⚠️ No se pudo mover el PDF: {file_err}")
-
-                    # Limpiar formulario/modal para poder seguir con la siguiente factura
-                    reiniciar_modal(driver)
-                    break
-
-                # --- DETECCIÓN DE DUPLICADOS ---
-                # Lo hago después de la carga de productos para darle tiempo al AJAX de Cianbox para validar
-                try:
-                    div_dup = driver.find_elements(By.ID, "mb_duplicated")
-                    if div_dup and div_dup[0].is_displayed():
-                        texto_error = div_dup[0].text.replace("\n", " ").strip()
-                        print(f"   ⛔ DUPLICADA: {texto_error}")
-                        registrar_log_selenium(cab, "DUPLICADO", texto_error)
-                        reiniciar_modal(driver)
-                        break
-                except Exception:
-                    pass
-                if div_dup and div_dup[0].is_displayed():
-                    texto_error = div_dup[0].text.replace("\n", " ").strip()
-                    print(f"   ⛔ DUPLICADA: {texto_error}")
-                    registrar_log_selenium(cab, "DUPLICADO", texto_error)
-                    reiniciar_modal(driver)
-                    break
-
-                # PERCEPCIONES (Versión Reforzada)
+                # 4.5. PERCEPCIONES DE IIBB
                 if cab.get("percepciones_iibb"):
-                    print("   ⚖️ Entrando a pestaña Percepciones...")
-                    click_seguro(driver, SELECTORES["tab_percepciones"])
-                    wait.until(EC.element_to_be_clickable(SELECTORES["select_provincia"]))
+                    print("      📍 Intentando cargar percepciones de IIBB...")
+                    try:
+                        click_seguro(driver, SELECTORES["tab_percepciones"])
+                        wait.until(EC.element_to_be_clickable(SELECTORES["select_provincia"]))
 
-                    for perc in cab["percepciones_iibb"]:
-                        jurisdiccion = perc["jurisdiccion"]
-                        monto = str(perc["monto"]) # Aseguramos que sea string
+                        for perc in cab["percepciones_iibb"]:
+                            jurisdiccion = perc.get("jurisdiccion", "Capital Federal")
+                            monto = str(perc["monto"])
+                            id_prov = MAPEO_PROVINCIAS.get(jurisdiccion, "23")
+                            print(f"      📍 Percepción IIBB {jurisdiccion} (ID {id_prov}): ${monto}")
 
-                        id_prov = MAPEO_PROVINCIAS.get(jurisdiccion, "23")
-                        print(f"      📍 Cargando {jurisdiccion} (ID {id_prov}): ${monto}")
+                            Select(driver.find_element(*SELECTORES["select_provincia"])).select_by_value(id_prov)
+                            campo_monto = driver.find_element(*SELECTORES["monto_percepcion"])
+                            monto_limpio = limpiar_monto_para_input(monto)
+                            campo_monto.send_keys(monto_limpio)
 
-                        # Seleccionar Provincia
-                        Select(driver.find_element(*SELECTORES["select_provincia"])).select_by_value(id_prov)
+                            try:
+                                driver.find_element(*SELECTORES["btn_add_percepcion"]).click()
+                            except:
+                                driver.execute_script("document.getElementById('add_impuesto').click();")
 
-                        # Cargar Monto con limpieza extrema
-                        campo_monto = driver.find_element(*SELECTORES["monto_percepcion"])
+                            time.sleep(0.3)
+                        print("      ✅ Percepciones de IIBB agregadas.")
+                    except Exception as perc_err:
+                        print(f"      ⚠️ No se pudo cargar percepción IIBB: {perc_err}")
 
-                        # Enviamos el monto sin puntos de miles
-                        monto_limpio = limpiar_monto_para_input(monto)
-                        campo_monto.send_keys(monto_limpio)
-
-                        # 4. Click en Agregar (el "+" de percepciones)
-                        try:
-                            driver.find_element(*SELECTORES["btn_add_percepcion"]).click()
-                        except:
-                            driver.execute_script("document.getElementById('add_impuesto').click();")
-
-                        # Esperar a que el campo de monto de percepción se limpie
-                        try:
-                            WebDriverWait(driver, 2, poll_frequency=0.1).until(
-                                lambda d: d.find_element(*SELECTORES["monto_percepcion"]).get_attribute("value") == ""
-                            )
-                        except:
-                            time.sleep(0.1)
-
-                    print(f"      ✅ Item de IIBB agregado.")
-
-                # Re-asegurar la opción de stock elegida justo antes de guardar (por si algún AJAX la reseteó)
-                try:
-                    select_stock = Select(driver.find_element(*SELECTORES["select_stock"]))
-                    if not mueve_stock:
-                        select_stock.select_by_value("no_stock")
-                    else:
-                        select_stock.select_by_value("toda_sr")
-                except Exception as stock_err:
-                    print(f"      ⚠️ No se pudo re-confirmar el tipo de stock: {stock_err}")
-
-                # E. GUARDAR Y PREPARAR SIGUIENTE
-                if "1139887" in str(cab.get("numero", "")):
-                    print("\n⚠️ PAUSA DE REVISIÓN ACTIVADA PARA FACTURA 1139887.")
-                    print("   Por favor, revisa todos los campos en el navegador.")
-                    input("   Presiona [ENTER] en esta terminal para continuar con el guardado...")
-
+                # 5. Guardar
                 old_fecha_el = driver.find_element(*SELECTORES["fecha"])
-                print("💾 Guardando...")
                 driver.find_element(*SELECTORES["guardar"]).click()
 
-                # Esperar a que ocurra una de tres cosas:
-                # 1. Aparezca la ventana de duplicado
-                # 2. Aparezca la notificación de error
-                # 3. La fecha anterior quede obsoleta (staleness, indicando guardado exitoso y refresco de página)
-                print("   ⏳ Esperando confirmación de guardado...")
-                try:
-                    WebDriverWait(driver, 5, poll_frequency=0.1).until(
-                        lambda d: len(d.find_elements(By.ID, "mb_duplicated")) > 0 or 
-                                  len(d.find_elements(*SELECTORES["notificacion_error"])) > 0 or
-                                  EC.staleness_of(old_fecha_el)(d)
-                    )
-                except:
-                    pass
-                try:
-                    div_dup = driver.find_elements(By.ID, "mb_duplicated")
-                    if div_dup and div_dup[0].is_displayed():
-                        texto_error = div_dup[0].text.replace("\n", " ").strip()
-                        print(f"   ⛔ DUPLICADA: {texto_error}")
-                        registrar_log_selenium(cab, "DUPLICADO", texto_error)
-                        reiniciar_modal(driver)
-                        break
-                except Exception:
-                    pass
+                # Esperar 4 segundos a que Cianbox responda y procese la solicitud
+                time.sleep(2)
+                
+                # Verificar exhaustivamente si apareció la ventana de duplicado en Cianbox
+                div_dup = driver.find_elements(By.ID, "mb_duplicated")
+                modales_flotantes = driver.find_elements(By.CSS_SELECTOR, "div.mb_window, div.windowNtf, div.mb_title")
+                
+                es_duplicado = False
+                texto_dup = "Comprobante ya registrado en Cianbox"
 
-                try:
-                    ntf = driver.find_elements(*SELECTORES["notificacion_error"])
-                    if ntf and ntf[0].is_displayed() and "Faltan campos" in ntf[0].text:
-                        print("   ❌ ERROR AL GUARDAR: Faltan campos requeridos.")
-                        registrar_log_selenium(cab, "ERROR_GUARDADO", "Faltan campos requeridos al intentar guardar.")
-                        reiniciar_modal(driver)
-                        break
-                except Exception:
-                    pass
-                # Si el elemento no quedó obsoleto por alguna razón, forzar la espera
-                try:
-                    if not EC.staleness_of(old_fecha_el)(driver):
-                        WebDriverWait(driver, 3, poll_frequency=0.1).until(EC.staleness_of(old_fecha_el))
-                except:
-                    pass
-
-                # Esperar el nuevo formulario limpio
-                wait.until(EC.presence_of_element_located(SELECTORES["fecha"]))
-                wait.until(lambda d: d.find_element(*SELECTORES["numero"]).get_attribute("value") == "")
-                print("✅ Guardado. Formulario listo para la siguiente.")
-                registrar_log_selenium(cab, "CARGA_EXITOSA", "Carga confirmada en Cianbox")
-
-                break
-            except Exception as e:
-                if intento < intentos - 1:
-                    print(f"   ⚠️ Intento {intento+1}/{intentos} falló para factura {cab['numero']}: {e}. Reintentando...")
-                    try:
-                        reiniciar_modal(driver)
-                    except Exception as reset_err:
-                        print(f"      ⚠️ Error al reiniciar formulario: {reset_err}. Refrescando...")
+                if div_dup and any(d.is_displayed() for d in div_dup):
+                    es_duplicado = True
+                    texto_dup = div_dup[0].text.replace("\n", " ").strip()
+                else:
+                    for mod in modales_flotantes:
                         try:
-                            driver.refresh()
-                            time.sleep(2)
-                            navegar_una_sola_vez(driver)
+                            if mod.is_displayed() and "duplicad" in mod.text.lower():
+                                es_duplicado = True
+                                texto_dup = mod.text.replace("\n", " ").strip()
+                                break
                         except:
                             pass
-                else:
-                    print(f"   ❌ Factura {cab['numero']} falló tras {intentos} intentos. Pasando a la siguiente.")
-                    registrar_log_selenium(cab, "ERROR_SELENIUM", str(e))
+
+                if es_duplicado:
+                    print(f"   ⛔ Factura Duplicada en Cianbox: {texto_dup}")
+                    reiniciar_modal(driver)
+                    
+                    sql_id = factura.get("_sql_id")
+                    if sql_id and db:
+                        from db.models import Factura, ProcesoLog
+                        f_rec = db.query(Factura).get(sql_id)
+                        if f_rec:
+                            f_rec.estado = "CARGADA_CIANBOX"
+                            f_rec.motivo_error = f"Comprobante duplicado en Cianbox: {texto_dup}"
+                            log = ProcesoLog(
+                                factura_id=f_rec.id,
+                                nivel="WARNING",
+                                mensaje=f"Comprobante omitido por duplicidad en Cianbox: {texto_dup}"
+                            )
+                            db.add(log)
+                            db.commit()
+                    break
+
+                # Confirmación de guardado real
+                print(f"✅ Factura {cab['numero']} cargada exitosamente.")
+                sql_id = factura.get("_sql_id")
+                if sql_id and db:
+                    from db.models import Factura, ProcesoLog
+                    f_rec = db.query(Factura).get(sql_id)
+                    if f_rec:
+                        f_rec.estado = "CARGADA_CIANBOX"
+                        f_rec.motivo_error = None
+                        f_rec.fecha_procesamiento = datetime.utcnow()
+                        log = ProcesoLog(
+                            factura_id=f_rec.id,
+                            nivel="INFO",
+                            mensaje="Inyección desatendida en Cianbox completada exitosamente vía Selenium."
+                        )
+                        db.add(log)
+                        db.commit()
+                break
+
+
+            except Exception as e:
+                if intento < intentos - 1:
+                    print(f"   ⚠️ Sincronizando interfaz (Intento {intento+1}/{intentos})... Reintentando formulario.")
                     try:
                         reiniciar_modal(driver)
                     except:
                         pass
-
-if __name__ == "__main__":
-    driver = iniciar_driver()
-    try:
-        login(driver)
-        procesar_lote(driver)
-        print("\n✨ Fin del proceso.")
-    except Exception as e:
-        print(f"❌ Error Fatal: {e}")
-    finally:
-        # Pausa la ejecución y mantiene el navegador abierto para depuración
-        input("Presiona Enter para cerrar el navegador y finalizar el script...")
-        driver.quit()
+                else:
+                    print(f"❌ Error final en carga Selenium para {cab['numero']}: {e}")
