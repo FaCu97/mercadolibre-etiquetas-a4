@@ -1,17 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
   <rect width="1280" height="800" fill="#eef3f7"/>
-  <rect x="125" y="66" width="1030" height="668" rx="28" fill="#fff" stroke="#d6e2ea" stroke-width="3"/>
-  <rect x="125" y="66" width="1030" height="172" rx="28" fill="#f4f9ff"/>
-  <text x="198" y="129" fill="#3483fa" font-family="Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="1.5">ETIQUETAS 2/3 A4</text>
-  <text x="198" y="181" fill="#17202a" font-family="Arial, sans-serif" font-size="42" font-weight="700">Prepará etiquetas para papel reutilizado</text>
-  <text x="198" y="216" fill="#536471" font-family="Arial, sans-serif" font-size="22">Dos etiquetas por hoja A4 y el último tercio libre.</text>
-  <rect x="198" y="278" width="884" height="253" rx="18" fill="#fbfdff" stroke="#d9e5ed" stroke-width="2"/>
-  <text x="234" y="333" fill="#17202a" font-family="Arial, sans-serif" font-size="27" font-weight="700">1. Seleccioná el PDF de etiquetas</text>
-  <rect x="234" y="362" width="812" height="118" rx="13" fill="#f4f9ff" stroke="#a9c9ee" stroke-width="3" stroke-dasharray="9 8"/>
-  <text x="640" y="414" fill="#1769d4" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700">Seleccionar o arrastrar PDF</text>
-  <text x="640" y="447" fill="#667784" text-anchor="middle" font-family="Arial, sans-serif" font-size="19">El archivo se procesa sólo en este navegador.</text>
-  <rect x="198" y="558" width="884" height="116" rx="18" fill="#fbfdff" stroke="#d9e5ed" stroke-width="2"/>
-  <text x="234" y="608" fill="#17202a" font-family="Arial, sans-serif" font-size="27" font-weight="700">2. Generá el PDF listo para imprimir</text>
-  <rect x="811" y="580" width="235" height="57" rx="10" fill="#3483fa"/>
-  <text x="928" y="617" fill="#fff" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700">Generar PDFs</text>
+  <rect x="330" y="46" width="620" height="708" rx="25" fill="#fff" stroke="#d6e2ea" stroke-width="3"/>
+  <text x="374" y="96" fill="#3483fa" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="1">ETIQUETAS 2/3 A4</text>
+  <text x="374" y="137" fill="#17202a" font-family="Arial, sans-serif" font-size="30" font-weight="700">Etiquetas para hojas 2/3 A4</text>
+  <text x="374" y="164" fill="#536471" font-family="Arial, sans-serif" font-size="16">Dos etiquetas por hoja y el último tercio libre.</text>
+  <rect x="374" y="191" width="532" height="43" rx="9" fill="#edf3f7"/>
+  <rect x="378" y="195" width="170" height="35" rx="7" fill="#fff"/>
+  <text x="463" y="218" fill="#1769d4" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700">Preparar</text>
+  <text x="640" y="218" fill="#536471" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700">Configuración</text>
+  <text x="820" y="218" fill="#536471" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700">Privacidad</text>
+  <rect x="374" y="255" width="532" height="238" rx="13" fill="#fbfdff" stroke="#d9e5ed" stroke-width="2"/>
+  <text x="400" y="297" fill="#17202a" font-family="Arial, sans-serif" font-size="20" font-weight="700">1. Elegí el PDF que estás visualizando</text>
+  <rect x="400" y="320" width="480" height="109" rx="9" fill="#f4f9ff" stroke="#a9c9ee" stroke-width="2.5" stroke-dasharray="8 7"/>
+  <text x="640" y="368" fill="#1769d4" text-anchor="middle" font-family="Arial, sans-serif" font-size="19" font-weight="700">Seleccionar o arrastrar PDF</text>
+  <text x="640" y="396" fill="#667784" text-anchor="middle" font-family="Arial, sans-serif" font-size="14">El archivo se procesa sólo en este navegador.</text>
+  <text x="400" y="465" fill="#667784" font-family="Arial, sans-serif" font-size="14">Todavía no seleccionaste un archivo.</text>
+  <rect x="374" y="510" width="532" height="194" rx="13" fill="#fbfdff" stroke="#d9e5ed" stroke-width="2"/>
+  <text x="400" y="550" fill="#17202a" font-family="Arial, sans-serif" font-size="20" font-weight="700">2. Generar</text>
+  <text x="400" y="578" fill="#667784" font-family="Arial, sans-serif" font-size="14">Seleccioná un PDF para ver el resumen.</text>
+  <rect x="400" y="596" width="480" height="43" rx="8" fill="#b8c8d8"/>
+  <text x="640" y="623" fill="#fff" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700">Generar PDFs</text>
+  <text x="400" y="674" fill="#667784" font-family="Arial, sans-serif" font-size="14">Documentos auxiliares: </text>
+  <text x="562" y="674" fill="#536471" font-family="Arial, sans-serif" font-size="14" font-weight="700">descartar</text>
 </svg>
