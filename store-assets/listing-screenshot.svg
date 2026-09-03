@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <rect width="1280" height="800" fill="#eef3f7"/>
+  <rect x="125" y="66" width="1030" height="668" rx="28" fill="#fff" stroke="#d6e2ea" stroke-width="3"/>
+  <rect x="125" y="66" width="1030" height="172" rx="28" fill="#f4f9ff"/>
+  <text x="198" y="129" fill="#3483fa" font-family="Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="1.5">ETIQUETAS 2/3 A4</text>
+  <text x="198" y="181" fill="#17202a" font-family="Arial, sans-serif" font-size="42" font-weight="700">Prepará etiquetas para papel reutilizado</text>
+  <text x="198" y="216" fill="#536471" font-family="Arial, sans-serif" font-size="22">Dos etiquetas por hoja A4 y el último tercio libre.</text>
+  <rect x="198" y="278" width="884" height="253" rx="18" fill="#fbfdff" stroke="#d9e5ed" stroke-width="2"/>
+  <text x="234" y="333" fill="#17202a" font-family="Arial, sans-serif" font-size="27" font-weight="700">1. Seleccioná el PDF de etiquetas</text>
+  <rect x="234" y="362" width="812" height="118" rx="13" fill="#f4f9ff" stroke="#a9c9ee" stroke-width="3" stroke-dasharray="9 8"/>
+  <text x="640" y="414" fill="#1769d4" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700">Seleccionar o arrastrar PDF</text>
+  <text x="640" y="447" fill="#667784" text-anchor="middle" font-family="Arial, sans-serif" font-size="19">El archivo se procesa sólo en este navegador.</text>
+  <rect x="198" y="558" width="884" height="116" rx="18" fill="#fbfdff" stroke="#d9e5ed" stroke-width="2"/>
+  <text x="234" y="608" fill="#17202a" font-family="Arial, sans-serif" font-size="27" font-weight="700">2. Generá el PDF listo para imprimir</text>
+  <rect x="811" y="580" width="235" height="57" rx="10" fill="#3483fa"/>
+  <text x="928" y="617" fill="#fff" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700">Generar PDFs</text>
+</svg>

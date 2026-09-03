@@ -1,0 +1,19 @@
+{
+  "name": "etiquetas-dos-tercios",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "package:store": "npm run build && cd dist && zip -FSr ../etiquetas-2-3-a4-1.0.0.zip . -x '*.DS_Store'",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.54"
+  },
+  "devDependencies": {
+    "vite": "^7.1.7"
+  }
+}

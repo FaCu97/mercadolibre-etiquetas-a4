@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Etiquetas 2/3 A4</title>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">Mercado Libre · impresión eficiente</p>
+        <h1>Etiquetas para hojas 2/3 A4</h1>
+        <p class="intro">Reorganiza dos etiquetas por hoja A4. El tercer tercio queda vacío para imprimir sobre papel reutilizado.</p>
+      </header>
+      <nav class="tabs" aria-label="Secciones de la extensión">
+        <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-panel="processor-panel">Preparar</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-panel="settings-panel">Configuración</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-panel="privacy-panel">Privacidad</button>
+      </nav>
+
+      <section id="processor-panel" class="tab-panel" role="tabpanel">
+      <section class="card source-card" aria-labelledby="source-title">
+        <h2 id="source-title">1. Elegí el PDF que estás visualizando</h2>
+        <label class="drop-zone" for="source-file" id="drop-zone">
+          <input id="source-file" type="file" accept="application/pdf,.pdf" />
+          <span class="drop-title">Seleccionar o arrastrar PDF</span>
+          <span class="drop-detail">El archivo se procesa sólo en este navegador.</span>
+        </label>
+        <p class="file-name" id="file-name" aria-live="polite">Todavía no seleccionaste un archivo.</p>
+      </section>
+
+      <section class="card result-card" aria-labelledby="result-title">
+        <div class="result-heading">
+          <div>
+            <h2 id="result-title">2. Generar</h2>
+            <p id="summary" class="hint">Seleccioná un PDF para ver el resumen.</p>
+          </div>
+          <button id="generate" type="button" disabled>Generar PDFs</button>
+        </div>
+        <p class="hint">Documentos auxiliares: <strong id="mode-label"></strong>. <button class="text-button" type="button" data-panel="settings-panel">Cambiar</button></p>
+        <p class="print-note">Al imprimir etiquetas: elegí A4, orientación original y escala <strong>100% / tamaño real</strong>. Cargá la hoja reutilizada con el mismo borde de entrada que usás habitualmente.</p>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </section>
+      </section>
+      <section id="settings-panel" class="tab-panel settings-panel" role="tabpanel" hidden>
+        <h2>Configuración</h2>
+        <p class="hint">Elegí qué hacer con los listados de productos y la hoja de control.</p>
+        <fieldset class="mode-cards">
+          <label><input type="radio" name="auxiliary-mode" value="discard" /><span><strong>Descartar documentos auxiliares</strong><small>Generar solamente el PDF de etiquetas reacomodadas.</small></span></label>
+          <label><input type="radio" name="auxiliary-mode" value="separate" /><span><strong>Generar un PDF separado</strong><small>Conservar listados de carrito y hojas de control en otro archivo A4.</small></span></label>
+          <label><input type="radio" name="auxiliary-mode" value="combined" /><span><strong>Agregar al mismo PDF</strong><small>Ubicarlos después de las etiquetas, para imprimirlos en A4 normal.</small></span></label>
+        </fieldset>
+        <p id="settings-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="privacy-panel" class="tab-panel privacy-panel" role="tabpanel" hidden>
+        <h2>Privacidad y datos</h2>
+        <p>Los PDFs y sus datos se procesan sólo en este navegador.</p>
+        <ul>
+          <li>No se envían archivos, direcciones ni códigos de barras a servidores externos.</li>
+          <li>No usamos analítica, publicidad ni cuentas de usuario.</li>
+          <li>Sólo se guarda localmente tu elección sobre documentos auxiliares.</li>
+        </ul>
+        <p class="hint">La política completa estará disponible desde la ficha de la extensión en Chrome Web Store.</p>
+      </section>
+    </main>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

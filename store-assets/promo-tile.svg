@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280">
+  <rect width="440" height="280" rx="20" fill="#3483fa"/>
+  <path d="M275 46h91l30 30v142H275z" fill="#fff" opacity=".96"/>
+  <path d="M366 46v30h30" fill="#dcecff"/>
+  <rect x="298" y="105" width="75" height="25" rx="6" fill="#3483fa"/>
+  <rect x="298" y="143" width="75" height="25" rx="6" fill="#3483fa"/>
+  <path d="M292 191h88" stroke="#d2dbe5" stroke-width="5" stroke-linecap="round" stroke-dasharray="7 8"/>
+  <text x="40" y="93" fill="#fff" font-family="Arial, sans-serif" font-size="25" font-weight="700">Etiquetas</text>
+  <text x="40" y="128" fill="#fff" font-family="Arial, sans-serif" font-size="25" font-weight="700">2/3 A4</text>
+  <text x="40" y="170" fill="#dcecff" font-family="Arial, sans-serif" font-size="16">Imprimí etiquetas en</text>
+  <text x="40" y="194" fill="#dcecff" font-family="Arial, sans-serif" font-size="16">papel reutilizado.</text>
+</svg>
