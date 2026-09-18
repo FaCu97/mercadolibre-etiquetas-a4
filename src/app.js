@@ -9,12 +9,14 @@ const summary = document.querySelector("#summary");
 const dropZone = document.querySelector("#drop-zone");
 const modeLabel = document.querySelector("#mode-label");
 const settingsStatus = document.querySelector("#settings-status");
+const version = document.querySelector("#version");
 const modeInputs = [...document.querySelectorAll('input[name="auxiliary-mode"]')];
 const tabButtons = [...document.querySelectorAll("[data-panel]")];
 const panels = [...document.querySelectorAll(".tab-panel")];
 let selectedFile = null;
 
 const stored = await chrome.storage.local.get({ auxiliaryMode: "discard" });
+version.textContent = chrome.runtime.getManifest().version;
 const modeNames = { discard: "descartar", separate: "archivo separado", combined: "mismo PDF" };
 modeLabel.textContent = modeNames[stored.auxiliaryMode] || "descartar";
 modeInputs.find((input) => input.value === stored.auxiliaryMode).checked = true;
