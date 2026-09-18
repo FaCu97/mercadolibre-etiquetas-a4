@@ -10,6 +10,8 @@ Extensión de Chrome para reorganizar etiquetas de Mercado Libre y aprovechar ho
 4. Elegí qué hacer con los listados de carrito y hojas de control.
 5. Generá el PDF e imprimí las etiquetas con tamaño A4 y escala 100% / tamaño real.
 
+Para convertir automáticamente un PDF local que ya está abierto en Chrome, activá **Permitir acceso a URLs de archivos** desde `chrome://extensions` → **Detalles** de la extensión. Sin ese permiso, podés seleccionar el PDF manualmente desde el popup.
+
 Las etiquetas se colocan en los primeros dos tercios de cada A4. El último tercio queda vacío para que el papel reciclado de 2/3 A4 no intente imprimir fuera de la hoja.
 
 ## Datos y ejemplos privados

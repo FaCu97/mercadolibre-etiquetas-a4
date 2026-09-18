@@ -13,7 +13,7 @@ async function run(fileName, mode) {
 }
 
 test("reorganiza los ejemplos privados de etiquetas", { skip: !fixturesAvailable }, async () => {
-  for (const [file, labels, sheets] of [["caso1.pdf", 1, 1], ["caso2.pdf", 2, 1], ["caso3.pdf", 3, 2], ["caso4.pdf", 7, 4]]) {
+  for (const [file, labels, sheets] of [["caso1.pdf", 1, 1], ["caso2.pdf", 2, 1], ["caso3.pdf", 3, 2], ["caso4.pdf", 7, 4], ["caso5.pdf", 38, 19]]) {
     const output = await run(file, "discard");
     assert.equal(output.labels, labels, file);
     assert.equal(output.labelSheets, sheets, file);

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <rect width="1280" height="800" fill="#eef3f7"/>
+  <text x="640" y="100" fill="#17202a" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" font-weight="700">Convertí etiquetas para hojas A4 de 2/3</text>
+  <text x="640" y="138" fill="#536471" text-anchor="middle" font-family="Arial, sans-serif" font-size="22">Dos etiquetas aprovechadas y un tercio libre para papel reutilizado.</text>
+  <text x="300" y="250" fill="#536471" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700">PDF original A4 horizontal</text>
+  <text x="980" y="250" fill="#1769d4" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700">PDF generado A4 horizontal</text>
+  <rect x="90" y="286" width="420" height="297" rx="14" fill="#fff" stroke="#cad9e4" stroke-width="3"/>
+  <rect x="119" y="315" width="104" height="239" rx="8" fill="#e7f1ff" stroke="#83b5ed" stroke-width="2"/>
+  <rect x="136" y="341" width="53" height="14" rx="3" fill="#3483fa"/>
+  <rect x="136" y="373" width="67" height="8" rx="3" fill="#a9c9ee"/>
+  <rect x="136" y="390" width="51" height="8" rx="3" fill="#a9c9ee"/>
+  <rect x="248" y="315" width="104" height="239" rx="8" fill="#e7f1ff" stroke="#83b5ed" stroke-width="2"/>
+  <rect x="265" y="341" width="53" height="14" rx="3" fill="#3483fa"/>
+  <rect x="265" y="373" width="67" height="8" rx="3" fill="#a9c9ee"/>
+  <rect x="265" y="390" width="51" height="8" rx="3" fill="#a9c9ee"/>
+  <rect x="377" y="315" width="104" height="239" rx="8" fill="#e7f1ff" stroke="#83b5ed" stroke-width="2"/>
+  <rect x="394" y="341" width="53" height="14" rx="3" fill="#3483fa"/>
+  <rect x="394" y="373" width="67" height="8" rx="3" fill="#a9c9ee"/>
+  <rect x="394" y="390" width="51" height="8" rx="3" fill="#a9c9ee"/>
+  <path d="M564 435h152" stroke="#3483fa" stroke-width="10" stroke-linecap="round"/>
+  <path d="M691 402l38 33-38 33" fill="none" stroke="#3483fa" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="770" y="286" width="420" height="297" rx="14" fill="#fff" stroke="#93c0f1" stroke-width="3"/>
+  <rect x="799" y="315" width="104" height="239" rx="8" fill="#fff9e7" stroke="#efcf80" stroke-width="2" stroke-dasharray="7 7"/>
+  <text x="851" y="440" fill="#80641e" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700">Tercio libre</text>
+  <rect x="928" y="315" width="104" height="239" rx="8" fill="#e7f1ff" stroke="#3483fa" stroke-width="2.5"/>
+  <rect x="945" y="341" width="53" height="14" rx="3" fill="#3483fa"/>
+  <rect x="945" y="373" width="67" height="8" rx="3" fill="#a9c9ee"/>
+  <rect x="945" y="390" width="51" height="8" rx="3" fill="#a9c9ee"/>
+  <rect x="1057" y="315" width="104" height="239" rx="8" fill="#e7f1ff" stroke="#3483fa" stroke-width="2.5"/>
+  <rect x="1074" y="341" width="53" height="14" rx="3" fill="#3483fa"/>
+  <rect x="1074" y="373" width="67" height="8" rx="3" fill="#a9c9ee"/>
+  <rect x="1074" y="390" width="51" height="8" rx="3" fill="#a9c9ee"/>
+  <text x="640" y="684" fill="#536471" text-anchor="middle" font-family="Arial, sans-serif" font-size="18">El PDF se procesa localmente, sin enviarlo a servidores externos.</text>
+  <rect x="316" y="717" width="648" height="45" rx="10" fill="#f4f9ff" stroke="#a9c9ee" stroke-width="1.5"/>
+  <text x="640" y="746" fill="#1769d4" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700">Imprimí en A4 horizontal con escala 100 % o tamaño real.</text>
+</svg>

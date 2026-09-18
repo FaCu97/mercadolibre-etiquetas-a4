@@ -1,6 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 
 const LABEL_MARKER = /recort[aá]\s+esta\s+parte\s+de\s+la\s+etiqueta/i;
+const FULL_LABEL_MARKER = /entregar\s+a\s+colecta\s+full/i;
 const CART_FOOTER = /env[ií]e\s+sus\s+ventas\s+lo\s+antes\s+posible/i;
 // Mercado Libre leaves unequal outer margins around its three visual labels.
 // These ratios describe the actual label frames on its A4 landscape template,
@@ -24,7 +25,9 @@ async function inspectPage(pdfPage) {
   const labels = new Set();
   for (const item of content.items) {
     const isHorizontal = Math.abs(item.transform[0]) >= Math.abs(item.transform[1]);
-    if (isHorizontal && LABEL_MARKER.test(item.str || "")) labels.add(clamp(Math.floor(item.transform[4] / (width / 3)), 0, 2));
+    if (isHorizontal && (LABEL_MARKER.test(item.str || "") || FULL_LABEL_MARKER.test(item.str || ""))) {
+      labels.add(clamp(Math.floor(item.transform[4] / (width / 3)), 0, 2));
+    }
   }
   const text = textFromContent(content);
   return {

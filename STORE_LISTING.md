@@ -17,6 +17,8 @@ Cómo funciona:
 2. Si preferís elegir un archivo, abrí el popup de la extensión y seleccioná o arrastrá el PDF.
 3. Elegí si querés descartar, separar o anexar los documentos auxiliares.
 
+Para convertir automáticamente un PDF local que ya tenés abierto, activá **Permitir acceso a URLs de archivos**: abrí `chrome://extensions`, buscá Etiquetas 2/3 A4, elegí **Detalles** y activá esa opción. Sin este permiso, igual podés seleccionar el PDF manualmente desde el popup.
+
 Todo el procesamiento se realiza localmente en tu navegador. La extensión no envía PDFs, direcciones, códigos de barras ni datos de ventas a servidores externos.
 
 Para imprimir, elegí tamaño A4, orientación original y escala 100 % o tamaño real.
@@ -24,7 +26,9 @@ Para imprimir, elegí tamaño A4, orientación original y escala 100 % o tamaño
 ## Recursos para subir
 
 - `store-assets/listing-screenshot.png` — captura de pantalla 1280 × 800 px.
+- `store-assets/how-it-works.png` — ilustración del PDF original y el PDF generado, 1280 × 800 px.
 - `store-assets/promo-tile.png` — mosaico promocional 440 × 280 px.
+- `store-assets/marquee-promo.png` — imagen promocional de marquesina 1400 × 560 px.
 - `public/icons/icon-128.png` — ícono de la tienda 128 × 128 px.
 
 ## Declaración de privacidad para el panel
