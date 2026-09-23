@@ -9,7 +9,7 @@
 
 ### Descripción detallada
 
-Prepará etiquetas de envío para imprimir en hojas A4 cortadas a dos tercios. La extensión reacomoda dos etiquetas por hoja y deja libre el último tercio, para aprovechar papel reutilizado sin imprimir fuera del área disponible.
+Prepará etiquetas de envío de Mercado Libre, incluidas las de Full, para imprimir en hojas A4 cortadas a dos tercios. La extensión reacomoda dos etiquetas por hoja y deja libre el último tercio, para aprovechar papel reutilizado sin imprimir fuera del área disponible.
 
 Cómo funciona:
 
@@ -49,4 +49,4 @@ Para imprimir, elegí tamaño A4, orientación original y escala 100 % o tamaño
 
 1. Publicá `PRIVACY.md` en una URL HTTPS accesible públicamente e ingresala en el campo **Privacy policy** del panel.
 2. Completá una URL o correo de soporte en la ficha de la tienda.
-3. Subí `etiquetas-2-3-a4-1.0.0.zip` y los recursos indicados arriba.
+3. Subí `etiquetas-2-3-a4-1.0.2.zip` y los recursos indicados arriba.

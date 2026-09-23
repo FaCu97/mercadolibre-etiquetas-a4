@@ -17,6 +17,10 @@ chrome.runtime.onMessage.addListener((message) => {
       const name = decodeURIComponent(new URL(message.source).pathname.split("/").pop() || "etiquetas.pdf");
       const baseName = name.replace(/\.pdf$/i, "");
       const output = await processLabels(new Uint8Array(await response.arrayBuffer()), message.auxiliaryMode || "discard");
+      if (output.alreadyPrepared) {
+        await chrome.runtime.sendMessage({ type: "pdf-already-prepared" });
+        return;
+      }
       const files = [prepareDownload(output.labelBytes, `${baseName}-etiquetas-2-tercios.pdf`)];
       if (output.auxiliaryBytes) files.push(prepareDownload(output.auxiliaryBytes, `${baseName}-documentos-auxiliares.pdf`));
       await chrome.runtime.sendMessage({ type: "pdf-ready-for-download", files });

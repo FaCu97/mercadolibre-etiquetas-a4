@@ -1,12 +1,13 @@
 {
   "name": "etiquetas-dos-tercios",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "package:store": "npm run build && cd dist && zip -FSr ../etiquetas-2-3-a4-1.0.0.zip . -x '*.DS_Store'",
+    "build": "npm run icons && vite build",
+    "icons": "node scripts/generate-icons.mjs",
+    "package:store": "npm run build && cd dist && zip -FSr ../etiquetas-2-3-a4-1.0.2.zip . -x '*.DS_Store'",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

@@ -79,6 +79,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message.type === "pdf-processed") showResult("✓", "#16784b");
+  if (message.type === "pdf-already-prepared") {
+    showResult("YA", "#16784b", "El PDF ya estaba preparado para imprimir.");
+  }
   if (message.type === "pdf-failed") showResult("!", "#b42318", message.reason || "No se pudo procesar el PDF.");
 });
 

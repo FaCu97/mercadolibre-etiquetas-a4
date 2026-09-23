@@ -21,6 +21,15 @@ test("reorganiza los ejemplos privados de etiquetas", { skip: !fixturesAvailable
   }
 });
 
+test("no vuelve a transformar un PDF ya preparado", { skip: !fixturesAvailable }, async () => {
+  const firstPass = await run("caso3.pdf", "discard");
+  const secondPass = await processLabels(firstPass.labelBytes, "discard", pdfjsLib.getDocument);
+  assert.equal(secondPass.alreadyPrepared, true);
+  assert.equal(secondPass.labels, 3);
+  assert.equal(secondPass.labelSheets, 2);
+  assert.equal(secondPass.labelBytes, null);
+});
+
 test("separa etiquetas, listados de carrito y control", { skip: !fixturesAvailable }, async () => {
   const output = await run("control.pdf", "separate");
   assert.equal(output.labels, 5);

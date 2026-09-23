@@ -89,6 +89,11 @@ generateButton.addEventListener("click", async () => {
   setStatus("Analizando y generando PDFs…");
   try {
     const output = await processLabels(new Uint8Array(await selectedFile.arrayBuffer()), auxiliaryMode());
+    if (output.alreadyPrepared) {
+      summary.textContent = `${output.labels} etiquetas en ${output.labelSheets} hoja${output.labelSheets === 1 ? "" : "s"} A4.`;
+      setStatus("Este PDF ya está preparado para imprimir; no se generó una copia nueva.", "success");
+      return;
+    }
     const baseName = selectedFile.name.replace(/\.pdf$/i, "");
     download(output.labelBytes, `${baseName}-etiquetas-2-tercios.pdf`);
     if (output.auxiliaryBytes) download(output.auxiliaryBytes, `${baseName}-documentos-auxiliares.pdf`);

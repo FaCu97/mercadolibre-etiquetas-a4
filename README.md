@@ -1,6 +1,6 @@
 # Etiquetas 2/3 A4
 
-Extensión de Chrome para reorganizar etiquetas de Mercado Libre y aprovechar hojas A4 cortadas a dos tercios. El procesamiento ocurre completamente en el navegador: las direcciones, códigos y PDFs no se envían a ningún servidor.
+Extensión de Chrome para reorganizar etiquetas de Mercado Libre —incluidas las etiquetas Full— y aprovechar hojas A4 cortadas a dos tercios. El procesamiento ocurre completamente en el navegador: las direcciones, códigos y PDFs no se envían a ningún servidor.
 
 ## Uso
 
