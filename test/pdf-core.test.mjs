@@ -46,3 +46,38 @@ test("conserva todas las páginas de una hoja de control larga", { skip: !fixtur
   assert.equal(output.auxiliaryPages, 4);
   assert.equal((await PDFDocument.load(output.labelBytes)).getPageCount(), 23);
 });
+
+for (const file of ['caso6-gestionar.pdf', 'caso7-correoarg.pdf']) {
+  const available = await fs.access(`${fixtureDirectory}/${file}`).then(() => true).catch(() => false);
+  test(`adapta ${file} a A4 y reconoce el resultado`, { skip: !available }, async () => {
+    const output = await run(file, 'separate');
+    assert.equal(output.labels, 1);
+    assert.equal(output.labelSheets, 1);
+    assert.equal(output.auxiliaryPages, 0);
+    assert.equal(output.auxiliaryBytes, null);
+    const pdf = await PDFDocument.load(output.labelBytes);
+    assert.equal(pdf.getPageCount(), 1);
+    assert.ok(Math.abs(pdf.getPage(0).getWidth() - 841.89) < 0.01);
+    assert.ok(Math.abs(pdf.getPage(0).getHeight() - 595.276) < 0.01);
+    const second = await processLabels(output.labelBytes, 'discard', pdfjsLib.getDocument);
+    assert.equal(second.alreadyPrepared, true);
+    assert.equal(second.labels, 1);
+  });
+}
+
+test('combina formatos distintos sin duplicar etiquetas ni crear auxiliares', { skip: !fixturesAvailable }, async (t) => {
+  const files = ['caso1.pdf', 'caso6-gestionar.pdf', 'caso7-correoarg.pdf'];
+  if (!(await Promise.all(files.map(f => fs.access(`${fixtureDirectory}/${f}`).then(() => true).catch(() => false)))).every(Boolean)) return t.skip('Faltan ejemplos privados');
+  const source = await PDFDocument.create();
+  for (const file of files) {
+    const input = await PDFDocument.load(await fs.readFile(`${fixtureDirectory}/${file}`));
+    (await source.copyPages(input, input.getPageIndices())).forEach(p => source.addPage(p));
+  }
+  const output = await processLabels(await source.save(), 'combined', pdfjsLib.getDocument);
+  assert.equal(output.labels, 3);
+  assert.equal(output.labelSheets, 2);
+  assert.equal(output.auxiliaryPages, 0);
+  const second = await processLabels(output.labelBytes, 'discard', pdfjsLib.getDocument);
+  assert.equal(second.alreadyPrepared, true);
+  assert.equal(second.labels, 3);
+});

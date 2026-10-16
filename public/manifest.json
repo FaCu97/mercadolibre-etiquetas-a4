@@ -1,10 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Etiquetas 2/3 A4",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Reorganiza etiquetas de envío en hojas A4 de dos tercios para aprovechar papel reutilizado.",
-  "permissions": ["storage", "tabs", "downloads", "offscreen"],
-  "host_permissions": ["file:///*"],
+  "permissions": [
+    "storage",
+    "tabs",
+    "downloads",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "file:///*"
+  ],
   "action": {
     "default_title": "Preparar etiquetas para hoja 2/3 A4",
     "default_popup": "app.html"

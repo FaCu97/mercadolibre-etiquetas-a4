@@ -2,7 +2,7 @@
 
 ## Propósito
 
-**Etiquetas 2/3 A4** es una extensión de Chrome (Manifest V3) que toma PDFs de etiquetas de Mercado Libre y los recompone para imprimir dos etiquetas por hoja A4. El último tercio de la hoja queda libre, para usar papel A4 ya cortado a dos tercios.
+**Etiquetas 2/3 A4** es una extensión de Chrome (Manifest V3) que toma PDFs de etiquetas de Mercado Libre, Gestionar y Correo Argentino y los recompone para imprimir dos etiquetas por hoja A4. El último tercio de la hoja queda libre, para usar papel A4 ya cortado a dos tercios.
 
 Todo el análisis y la generación del PDF ocurren localmente en el navegador. No hay backend ni llamadas a servicios externos: los archivos, direcciones y códigos permanecen en el equipo.
 
@@ -56,7 +56,8 @@ El núcleo usa PDF.js para extraer texto y sus coordenadas. No rasteriza ni apli
 
 Para cada página, `inspectPage` determina:
 
-- **Etiquetas:** busca el texto `Recortá esta parte de la etiqueta` o `Entregar a colecta Full` (admite acentos y mayúsculas). Sólo considera ocurrencias horizontales y calcula en cuál de las tres columnas está según su coordenada X.
+- **Gestionar / Correo Argentino:** reconoce combinaciones de campos de cada plantilla y recorta el marco relativo al encabezado. Gestionar usa `Entrega Rápida` y Correo `REMITENTE`. La escala se calcula a partir del tamaño del texto; el contenido se inserta vectorialmente, manteniendo proporciones, en A4 apaisado. Se admiten los formatos de los casos 6 y 7; otras plantillas requieren validación.
+- **Etiquetas de Mercado Libre:** busca el texto `Recortá esta parte de la etiqueta` o `Entregar a colecta Full` (admite acentos y mayúsculas). Sólo considera ocurrencias horizontales y calcula en cuál de las tres columnas está según su coordenada X.
 - **Listado de carrito:** busca el pie `Envíe sus ventas lo antes posible`.
 - **Página auxiliar genérica:** una página sin etiquetas, con más de 40 caracteres no blancos, se considera por ejemplo una hoja de control.
 

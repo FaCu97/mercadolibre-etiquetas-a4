@@ -1,10 +1,10 @@
 # Etiquetas 2/3 A4
 
-Extensión de Chrome para reorganizar etiquetas de Mercado Libre —incluidas las etiquetas Full— y aprovechar hojas A4 cortadas a dos tercios. El procesamiento ocurre completamente en el navegador: las direcciones, códigos y PDFs no se envían a ningún servidor.
+Extensión de Chrome para reorganizar etiquetas de Mercado Libre —incluidas las etiquetas Full—, Gestionar y Correo Argentino y aprovechar hojas A4 cortadas a dos tercios. El procesamiento ocurre completamente en el navegador: las direcciones, códigos y PDFs no se envían a ningún servidor.
 
 ## Uso
 
-1. Descargá y abrí el PDF de Mercado Libre.
+1. Descargá y abrí el PDF de etiquetas.
 2. Hacé clic en el ícono de la extensión para abrir el procesador.
 3. Elegí o arrastrá el PDF descargado.
 4. Elegí qué hacer con los listados de carrito y hojas de control.
@@ -12,11 +12,11 @@ Extensión de Chrome para reorganizar etiquetas de Mercado Libre —incluidas la
 
 Para convertir automáticamente un PDF local que ya está abierto en Chrome, activá **Permitir acceso a URLs de archivos** desde `chrome://extensions` → **Detalles** de la extensión. Sin ese permiso, podés seleccionar el PDF manualmente desde el popup.
 
-Las etiquetas se colocan en los primeros dos tercios de cada A4. El último tercio queda vacío para que el papel reciclado de 2/3 A4 no intente imprimir fuera de la hoja.
+Las etiquetas se colocan en los dos tercios derechos de cada A4. El último tercio queda vacío para que el papel reciclado de 2/3 A4 no intente imprimir fuera de la hoja.
 
 ## Datos y ejemplos privados
 
-Los PDFs descargados de Mercado Libre contienen direcciones y otros datos personales. No se incluyen en el repositorio: guardalos sólo en `private-pdfs/`, carpeta ignorada por Git. La extensión no carga ningún PDF a servidores externos.
+Los PDFs de etiquetas contienen direcciones y otros datos personales. No se incluyen en el repositorio: guardalos sólo en `private-pdfs/`, carpeta ignorada por Git. La extensión no carga ningún PDF a servidores externos.
 
 La política de privacidad para la publicación está en [PRIVACY.md](PRIVACY.md).
 
