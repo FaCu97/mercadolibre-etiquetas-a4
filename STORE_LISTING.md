@@ -9,12 +9,12 @@
 
 ### Descripción detallada
 
-Prepará etiquetas de envío de Mercado Libre (incluidas las de Full), Gestionar y Correo Argentino, para imprimir en hojas A4 cortadas a dos tercios. La extensión reacomoda dos etiquetas por hoja y deja libre el tercio izquierdo, para aprovechar papel reutilizado sin imprimir fuera del área disponible.
+Prepará etiquetas de envío de Mercado Libre (incluidas las de Full), Gestionar, Correo Argentino y Vía Cargo, para imprimir en hojas A4 cortadas a dos tercios. La extensión reacomoda hasta cuatro etiquetas de Vía Cargo o dos de los otros formatos por hoja y deja libre el tercio izquierdo, para aprovechar papel reutilizado sin imprimir fuera del área disponible.
 
 Cómo funciona:
 
 1. Abrí el PDF de etiquetas en Chrome y hacé clic en la extensión: el PDF se procesa y descarga automáticamente.
-2. Si preferís elegir un archivo, abrí el popup de la extensión y seleccioná o arrastrá el PDF.
+2. Para agrupar archivos, abrí el popup de la extensión y seleccioná o arrastrá uno o varios PDF originales.
 3. Elegí si querés descartar, separar o anexar los documentos auxiliares.
 
 Para convertir automáticamente un PDF local que ya tenés abierto, activá **Permitir acceso a URLs de archivos**: abrí `chrome://extensions`, buscá Etiquetas 2/3 A4, elegí **Detalles** y activá esa opción. Sin este permiso, igual podés seleccionar el PDF manualmente desde el popup.
@@ -49,10 +49,16 @@ Para imprimir, elegí tamaño A4, orientación original y escala 100 % o tamaño
 
 1. Publicá `PRIVACY.md` en una URL HTTPS accesible públicamente e ingresala en el campo **Privacy policy** del panel.
 2. Completá una URL o correo de soporte en la ficha de la tienda.
-3. Subí `etiquetas-2-3-a4-1.0.3.zip` y los recursos indicados arriba.
+3. Subí `etiquetas-2-3-a4-1.0.4.zip` y los recursos indicados arriba.
 
 ## Novedades de la versión 1.0.3
 
 - Soporte para las plantillas de Gestionar y Correo Argentino verificadas con los ejemplos de prueba.
 - Ajuste proporcional a A4 horizontal, incluso cuando el original está en A3.
 - Reconocimiento de PDFs ya adaptados para evitar procesarlos nuevamente.
+
+## Novedades de la versión 1.0.4
+
+- Soporte para la plantilla cuadrada de Vía Cargo, con hasta cuatro etiquetas por hoja de dos tercios.
+- Selección y arrastre de varios PDF para agrupar sus etiquetas en un único resultado.
+- Conservación del orden de las etiquetas y detección de archivos incompatibles o ya preparados al agrupar.

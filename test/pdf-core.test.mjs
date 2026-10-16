@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import test from "node:test";
 import { PDFDocument } from "pdf-lib";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
-import { processLabels } from "../src/pdf-core.js";
+import { processLabels, processLabelFiles } from "../src/pdf-core.js";
 
 const fixtureDirectory = "private-pdfs";
 const fixturesAvailable = await fs.access(`${fixtureDirectory}/caso1.pdf`).then(() => true).catch(() => false);
@@ -80,4 +80,67 @@ test('combina formatos distintos sin duplicar etiquetas ni crear auxiliares', { 
   const second = await processLabels(output.labelBytes, 'discard', pdfjsLib.getDocument);
   assert.equal(second.alreadyPrepared, true);
   assert.equal(second.labels, 3);
+});
+
+const viaAvailable = await fs.access(`${fixtureDirectory}/caso8-viacargo.pdf`).then(() => true).catch(() => false);
+test('Vía Cargo: seis etiquetas en dos hojas, orden y códigos conservados', { skip: !viaAvailable }, async () => {
+  const output = await run('caso8-viacargo.pdf', 'separate');
+  assert.equal(output.labels, 6);
+  assert.equal(output.labelSheets, 2);
+  assert.equal(output.auxiliaryPages, 0);
+  assert.equal(output.auxiliaryBytes, null);
+  const doc = await pdfjsLib.getDocument({ data: output.labelBytes.slice() }).promise;
+  const codes = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const content = await (await doc.getPage(i)).getTextContent();
+    const items = content.items.filter(item => /^\d{26}$/.test(item.str));
+    assert.equal(items.length, i === 1 ? 4 : 2);
+    for (const item of items) {
+      assert.ok(item.transform[4] > 841.89 / 3, 'fuera del tercio vacío');
+      assert.ok(item.transform[4] + item.width < 841.89, 'dentro del borde derecho');
+      codes.push(item.str);
+    }
+  }
+  await doc.destroy();
+  assert.equal(new Set(codes).size, 6);
+  assert.deepEqual(codes.map(code => code.slice(-3)), ['001', '002', '003', '004', '005', '006']);
+  const second = await processLabels(output.labelBytes, 'discard', pdfjsLib.getDocument);
+  assert.equal(second.alreadyPrepared, true);
+  assert.equal(second.labels, 6);
+  assert.equal(second.labelSheets, 2);
+});
+
+test('agrupa PDF individuales de Vía Cargo y rechaza entradas incompatibles o preparadas', { skip: !viaAvailable }, async () => {
+  const source = await PDFDocument.load(await fs.readFile(`${fixtureDirectory}/caso8-viacargo.pdf`));
+  const files = [];
+  for (const index of source.getPageIndices()) {
+    const single = await PDFDocument.create();
+    const [page] = await single.copyPages(source, [index]);
+    single.addPage(page);
+    files.push(await single.save());
+  }
+  for (const count of [1, 2, 3, 4, 5, 6]) {
+    const output = await processLabelFiles(files.slice(0, count), 'discard', pdfjsLib.getDocument);
+    assert.equal(output.labels, count);
+    assert.equal(output.labelSheets, Math.ceil(count / 4));
+    const second = await processLabels(output.labelBytes, 'discard', pdfjsLib.getDocument);
+    assert.equal(second.alreadyPrepared, true);
+    assert.equal(second.labels, count);
+  }
+  const output = await processLabelFiles(files, 'discard', pdfjsLib.getDocument);
+  await assert.rejects(processLabelFiles([files[0], output.labelBytes], 'discard', pdfjsLib.getDocument), /PDF 2 ya está preparado/);
+  const blank = await PDFDocument.create();
+  blank.addPage();
+  await assert.rejects(processLabelFiles([files[0], await blank.save()], 'discard', pdfjsLib.getDocument), /PDF 2 no contiene/);
+});
+
+test('alterna etiquetas altas y compactas sin superponerlas', { skip: !viaAvailable || !fixturesAvailable }, async () => {
+  const files = await Promise.all(['caso1.pdf', 'caso8-viacargo.pdf', 'caso1.pdf'].map(async file => new Uint8Array(await fs.readFile(`${fixtureDirectory}/${file}`))));
+  const output = await processLabelFiles(files, 'discard', pdfjsLib.getDocument);
+  assert.equal(output.labels, 8);
+  assert.equal(output.labelSheets, 4);
+  const second = await processLabels(output.labelBytes, 'discard', pdfjsLib.getDocument);
+  assert.equal(second.alreadyPrepared, true);
+  assert.equal(second.labels, 8);
+  assert.equal(second.labelSheets, 4);
 });

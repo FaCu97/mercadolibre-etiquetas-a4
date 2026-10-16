@@ -1,5 +1,5 @@
 import "./style.css";
-import { processLabels } from "./pdf-processor.js";
+import { processLabelFiles } from "./pdf-processor.js";
 
 const fileInput = document.querySelector("#source-file");
 const fileName = document.querySelector("#file-name");
@@ -13,7 +13,7 @@ const version = document.querySelector("#version");
 const modeInputs = [...document.querySelectorAll('input[name="auxiliary-mode"]')];
 const tabButtons = [...document.querySelectorAll("[data-panel]")];
 const panels = [...document.querySelectorAll(".tab-panel")];
-let selectedFile = null;
+let selectedFiles = [];
 
 const stored = await chrome.storage.local.get({ auxiliaryMode: "discard" });
 version.textContent = chrome.runtime.getManifest().version;
@@ -47,13 +47,14 @@ modeInputs.forEach((input) => input.addEventListener("change", async () => {
   settingsStatus.textContent = "Configuración guardada.";
 }));
 
-function setFile(file) {
-  if (!file || file.type !== "application/pdf") {
-    setStatus("Elegí un archivo PDF.", "error");
+function setFiles(files) {
+  const candidates = Array.from(files);
+  if (!candidates.length || candidates.some(file => file.type !== "application/pdf" && !/\.pdf$/i.test(file.name))) {
+    setStatus("Elegí únicamente archivos PDF.", "error");
     return;
   }
-  selectedFile = file;
-  fileName.textContent = file.name;
+  selectedFiles = candidates;
+  fileName.textContent = candidates.map(file => file.name).join(" · ");
   summary.textContent = "Listo para analizar y reacomodar las etiquetas.";
   generateButton.disabled = false;
   setStatus("");
@@ -68,7 +69,7 @@ function download(bytes, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
+fileInput.addEventListener("change", () => setFiles(fileInput.files));
 for (const eventName of ["dragenter", "dragover"]) {
   dropZone.addEventListener(eventName, (event) => {
     event.preventDefault();
@@ -81,20 +82,21 @@ for (const eventName of ["dragleave", "drop"]) {
     dropZone.classList.remove("dragging");
   });
 }
-dropZone.addEventListener("drop", (event) => setFile(event.dataTransfer.files[0]));
+dropZone.addEventListener("drop", (event) => setFiles(event.dataTransfer.files));
 
 generateButton.addEventListener("click", async () => {
-  if (!selectedFile) return;
+  if (!selectedFiles.length) return;
+  const files = [...selectedFiles];
   generateButton.disabled = true;
   setStatus("Analizando y generando PDFs…");
   try {
-    const output = await processLabels(new Uint8Array(await selectedFile.arrayBuffer()), auxiliaryMode());
+    const output = await processLabelFiles(await Promise.all(files.map(async file => new Uint8Array(await file.arrayBuffer()))), auxiliaryMode());
     if (output.alreadyPrepared) {
       summary.textContent = `${output.labels} etiquetas en ${output.labelSheets} hoja${output.labelSheets === 1 ? "" : "s"} A4.`;
       setStatus("Este PDF ya está preparado para imprimir; no se generó una copia nueva.", "success");
       return;
     }
-    const baseName = selectedFile.name.replace(/\.pdf$/i, "");
+    const baseName = files.length === 1 ? files[0].name.replace(/\.pdf$/i, "") : "etiquetas-agrupadas";
     download(output.labelBytes, `${baseName}-etiquetas-2-tercios.pdf`);
     if (output.auxiliaryBytes) download(output.auxiliaryBytes, `${baseName}-documentos-auxiliares.pdf`);
     summary.textContent = `${output.labels} etiquetas en ${output.labelSheets} hoja${output.labelSheets === 1 ? "" : "s"} A4.`;
@@ -130,7 +132,7 @@ async function openSource(source) {
     setStatus("Convirtiendo el PDF abierto…");
     const response = await fetch(source);
     const name = decodeURIComponent(new URL(source).pathname.split("/").pop() || "etiquetas.pdf");
-    setFile(new File([await response.blob()], name, { type: "application/pdf" }));
+    setFiles([new File([await response.blob()], name, { type: "application/pdf" })]);
     generateButton.click();
   } catch { setStatus("No se pudo leer el PDF abierto. Verificá el permiso de archivos locales.", "error"); }
 }

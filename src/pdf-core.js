@@ -54,6 +54,11 @@ async function inspectPage(pdfPage) {
       } });
     }
   }
+  const viaCargo = /GUIA:/i.test(text) && /BULTOS/.test(text) && /CD DESTINO/.test(text) && /CONDICIONES DE DESPACHO/.test(text);
+  if (!detected.length && viaCargo) {
+    const [left, bottom, right, top] = pdfPage.view;
+    detected.push({ compact: true, crop: { left, bottom, right, top } });
+  }
   return {
     labels: detected,
     hasCartDetail: CART_FOOTER.test(text),
@@ -68,7 +73,7 @@ function preparedLayout(source, classifications) {
   // pdf-lib writes each cropped label as an embedded page. PDF.js still exposes
   // text outside that crop, so text coordinates alone cannot identify the
   // generated layout reliably. Its page structure can: label pages contain one
-  // or two embedded label pages, with an optional single one only at the end.
+  // to four embedded label pages depending on the template.
   const labelsPerPage = labelPages.map(({ pageIndex }) => {
     const resources = source.getPage(pageIndex).node.Resources();
     const xObjects = resources?.lookup(PDFName.of("XObject"), PDFDict);
@@ -76,7 +81,12 @@ function preparedLayout(source, classifications) {
       ? [...xObjects.keys()].filter((name) => String(name).startsWith("/EmbeddedPdfPage-")).length
       : 0;
   });
-  const valid = labelsPerPage.every((count, index) => count === 2 || (index === labelsPerPage.length - 1 && count === 1));
+  const valid = labelsPerPage.every((count, index) => {
+    const page = source.getPage(labelPages[index].pageIndex);
+    const capacity = labelPages[index].labels[0].compact ? 4 : 2;
+    return Math.abs(page.getWidth() - A4_LANDSCAPE[0]) < 1 &&
+      Math.abs(page.getHeight() - A4_LANDSCAPE[1]) < 1 && count >= 1 && count <= capacity;
+  });
   if (!valid) return null;
   return { labels: labelsPerPage.reduce((total, count) => total + count, 0), sheets: labelsPerPage.length };
 }
@@ -109,16 +119,40 @@ async function createAuxiliaryDocument(source, classifications) {
   return auxiliary;
 }
 
-export async function processLabels(sourceBytes, auxiliaryMode, getDocument) {
+async function classify(sourceBytes, getDocument) {
   const pdfjsDocument = await getDocument({ data: sourceBytes.slice(0) }).promise;
   const classifications = [];
-  for (let pageIndex = 0; pageIndex < pdfjsDocument.numPages; pageIndex += 1) {
-    const inspection = await inspectPage(await pdfjsDocument.getPage(pageIndex + 1));
-    classifications.push({ pageIndex, ...inspection, includeAuxiliary: inspection.hasCartDetail || (!inspection.labels.length && inspection.hasMeaningfulText) });
+  try {
+    for (let pageIndex = 0; pageIndex < pdfjsDocument.numPages; pageIndex += 1) {
+      const inspection = await inspectPage(await pdfjsDocument.getPage(pageIndex + 1));
+      classifications.push({ pageIndex, ...inspection, includeAuxiliary: inspection.hasCartDetail || (!inspection.labels.length && inspection.hasMeaningfulText) });
+    }
+  } finally {
+    await pdfjsDocument.destroy();
   }
-  await pdfjsDocument.destroy();
+  return classifications;
+}
+
+// Validate each input before merging, so an incompatible or already prepared
+// file cannot silently disappear or be cropped as an original label.
+export async function processLabelFiles(files, auxiliaryMode, getDocument) {
+  if (!files.length) throw new Error("Elegí al menos un PDF.");
+  if (files.length === 1) return processLabels(files[0], auxiliaryMode, getDocument);
+  const merged = await PDFDocument.create();
+  for (let index = 0; index < files.length; index += 1) {
+    const pages = await classify(files[index], getDocument);
+    if (!pages.some(page => page.labels.length)) throw new Error(`El PDF ${index + 1} no contiene etiquetas compatibles.`);
+    const source = await PDFDocument.load(files[index].slice(0));
+    if (preparedLayout(source, pages)) throw new Error(`El PDF ${index + 1} ya está preparado. Para agrupar etiquetas, seleccioná los PDF originales.`);
+    (await merged.copyPages(source, source.getPageIndices())).forEach(page => merged.addPage(page));
+  }
+  return processLabels(await merged.save(), auxiliaryMode, getDocument);
+}
+
+export async function processLabels(sourceBytes, auxiliaryMode, getDocument) {
+  const classifications = await classify(sourceBytes, getDocument);
   const labels = classifications.flatMap((page) => page.labels.map((label) => ({ pageIndex: page.pageIndex, ...label })));
-  if (!labels.length) throw new Error("No se encontraron etiquetas compatibles. Verificá que sea un PDF de etiquetas de Mercado Libre, Gestionar o Correo Argentino.");
+  if (!labels.length) throw new Error("No se encontraron etiquetas compatibles. Verificá que sea un PDF de etiquetas de Mercado Libre, Gestionar, Correo Argentino o Vía Cargo.");
   const source = await PDFDocument.load(sourceBytes.slice(0));
   const prepared = preparedLayout(source, classifications);
   if (prepared) {
@@ -134,16 +168,25 @@ export async function processLabels(sourceBytes, auxiliaryMode, getDocument) {
 
   const output = await PDFDocument.create();
   output.setTitle("Etiquetas 2/3 A4");
+  // Keep input order; start a new sheet when the template capacity changes.
+  let targetPage;
+  let used = 0;
+  let capacity = 0;
   for (let index = 0; index < labels.length; index += 1) {
     const label = labels[index];
     const sourcePage = source.getPage(label.pageIndex);
     const { width, height } = sourcePage.getSize();
-    const targetPage = index % 2 === 0 ? output.addPage(A4_LANDSCAPE) : output.getPage(output.getPageCount() - 1);
+    const nextCapacity = label.compact ? 4 : 2;
+    if (!targetPage || used === capacity || capacity !== nextCapacity) {
+      targetPage = output.addPage(A4_LANDSCAPE);
+      used = 0;
+      capacity = nextCapacity;
+    }
     const sourceFrame = label.crop || { ...labelFrame(width, label.slot), bottom: 0, top: height };
     // The recycled 2/3 sheet enters from the opposite side of the A4 page,
     // so its printable area corresponds to the two right-most label frames.
-    const isUnpairedLastLabel = labels.length % 2 === 1 && index === labels.length - 1;
-    const targetFrame = labelFrame(A4_LANDSCAPE[0], isUnpairedLastLabel ? 2 : (index % 2) + 1);
+    const isUnpairedLastLabel = !label.compact && used === 0 && (!labels[index + 1] || labels[index + 1].compact);
+    const targetFrame = labelFrame(A4_LANDSCAPE[0], isUnpairedLastLabel ? 2 : (used % 2) + 1);
     const sourceLabel = await output.embedPage(sourcePage, {
       left: sourceFrame.left,
       bottom: sourceFrame.bottom,
@@ -152,14 +195,18 @@ export async function processLabels(sourceBytes, auxiliaryMode, getDocument) {
     });
     const cropWidth = sourceFrame.right - sourceFrame.left;
     const cropHeight = sourceFrame.top - sourceFrame.bottom;
-    const scale = Math.min(targetFrame.width / cropWidth, A4_LANDSCAPE[1] / cropHeight);
+    const cellHeight = label.compact ? A4_LANDSCAPE[1] / 2 : A4_LANDSCAPE[1];
+    const cellBottom = label.compact && used < 2 ? cellHeight : 0;
+    const scale = Math.min(targetFrame.width / cropWidth, cellHeight / cropHeight);
     targetPage.drawPage(sourceLabel, {
       x: targetFrame.left + (targetFrame.width - cropWidth * scale) / 2,
-      y: (A4_LANDSCAPE[1] - cropHeight * scale) / 2,
+      y: cellBottom + (cellHeight - cropHeight * scale) / 2,
       width: cropWidth * scale, height: cropHeight * scale
     });
+    used += 1;
   }
 
+  const labelSheets = output.getPageCount();
   const auxiliaryPages = classifications.filter((page) => page.includeAuxiliary);
   let auxiliaryBytes = null;
   if (auxiliaryMode !== "discard" && auxiliaryPages.length) {
@@ -169,5 +216,5 @@ export async function processLabels(sourceBytes, auxiliaryMode, getDocument) {
       copied.forEach((page) => output.addPage(page));
     } else auxiliaryBytes = await auxiliary.save();
   }
-  return { labels: labels.length, labelSheets: Math.ceil(labels.length / 2), auxiliaryPages: auxiliaryPages.length, labelBytes: await output.save(), auxiliaryBytes, alreadyPrepared: false };
+  return { labels: labels.length, labelSheets, auxiliaryPages: auxiliaryPages.length, labelBytes: await output.save(), auxiliaryBytes, alreadyPrepared: false };
 }

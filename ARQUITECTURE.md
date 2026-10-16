@@ -110,3 +110,9 @@ Las pruebas con PDFs reales son deliberadamente opcionales: se ejecutan sólo si
 - Se requiere que el PDF tenga texto seleccionable; un PDF escaneado como imagen no contiene las señales necesarias para detectar etiquetas.
 - El PDF de salida debe imprimirse en A4, orientación original y escala 100 % / tamaño real para preservar las dimensiones y la ubicación de los códigos.
 - La extensión sólo persiste la preferencia de documentos auxiliares; no conserva PDFs ni su contenido.
+
+## Vía Cargo y entrada múltiple
+
+`processLabelFiles` valida cada archivo y reúne sus páginas antes de llamar a `processLabels`. Rechaza entradas sin etiquetas y archivos ya preparados. La interfaz admite selección múltiple y arrastrar varios archivos.
+
+Vía Cargo se reconoce por la combinación `GUIA:`, `BULTOS`, `CD DESTINO` y `CONDICIONES DE DESPACHO`. Se conserva la página completa y se acomoda en una cuadrícula de cuatro etiquetas en los dos tercios derechos de A4. Los formatos altos conservan dos posiciones. El contador de hojas usa las páginas efectivamente generadas; la detección de resultados preparados admite de una a cuatro etiquetas según el formato.
