@@ -35,6 +35,9 @@ class Factura(Base):
     
     archivo_pdf_path = Column(String, nullable=False)
     archivo_nombre = Column(String, nullable=False)
+    mueve_stock = Column(Boolean, default=True)
+    cuit_receptor = Column(String, nullable=True)
+
     
     # Estados posibles: PENDIENTE_CARGA, CARGADA_CIANBOX, ERROR_PROCESAMIENTO, ERROR_CARGA
     estado = Column(String, default="PENDIENTE_CARGA", index=True)

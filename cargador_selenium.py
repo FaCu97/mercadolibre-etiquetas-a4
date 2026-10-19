@@ -246,17 +246,7 @@ def iniciar_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
-    chrome_bin = os.getenv("CHROME_BIN", "/usr/bin/chromium")
-    chromedriver_path = os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
-
-    if os.path.exists(chrome_bin):
-        options.binary_location = chrome_bin
-
-    if os.path.exists(chromedriver_path):
-        from selenium.webdriver.chrome.service import Service
-        service = Service(executable_path=chromedriver_path)
-        return webdriver.Chrome(service=service, options=options)
-
+    # Selenium Manager will locate the appropriate ChromeDriver automatically.
     return webdriver.Chrome(options=options)
 
 
@@ -567,8 +557,10 @@ def cargar_facturas_cianbox(proveedor_filtro: str = None, factura_id: int = None
                     "numero": f.numero_comprobante.split("-")[1] if "-" in f.numero_comprobante else f.numero_comprobante,
                     "total": str(f.total).replace(".", ","),
                     "percepciones_iibb": percepciones_list,
-                    "mueve_stock": True
+                    "mueve_stock": f.mueve_stock if f.mueve_stock is not None else True,
+                    "id_contribuyente": "1" if getattr(f, "cuit_receptor", "") == os.getenv("CUIT_SUCURSAL_1", "30719342457") else "0"
                 },
+
 
                 "productos": [
                     {
@@ -646,8 +638,23 @@ def procesar_lote_en_memoria(driver, facturas, db=None):
                 val_letra = MAPEO_LETRAS.get(cab["letra"].upper(), "1")
                 Select(driver.find_element(*SELECTORES["select_tipo"])).select_by_value(val_tipo)
                 Select(driver.find_element(*SELECTORES["select_letra"])).select_by_value(val_letra)
+                
+                try:
+                    Select(driver.find_element(*SELECTORES["select_contribuyente"])).select_by_value(id_contribuyente)
+                except Exception as e:
+                    print(f"      ⚠️ No se pudo seleccionar el contribuyente en el formulario: {e}")
+
+                # --- CONTROL EXPLÍCITO DE STOCK ---
+                mueve_stock = cab.get("mueve_stock", True)
+                opt_stock = "toda_sr" if mueve_stock else "no_stock"
+                print(f"      📦 Configurando Control de Stock: {'MUEVE STOCK (toda_sr)' if mueve_stock else 'NO MUEVE STOCK (no_stock)'}...")
+                try:
+                    Select(driver.find_element(*SELECTORES["select_stock"])).select_by_value(opt_stock)
+                except Exception as stock_err:
+                    print(f"      ⚠️ No se pudo seleccionar opción de stock '{opt_stock}': {stock_err}")
 
                 time.sleep(0.6)
+
 
                 # --- VALIDACIÓN TEMPRANA DE DUPLICADO (DESPUÉS DE INGRESAR NÚMERO/COMPROBANTE) ---
                 div_dup_early = driver.find_elements(By.ID, "mb_duplicated")
@@ -683,11 +690,18 @@ def procesar_lote_en_memoria(driver, facturas, db=None):
                         # CASO: Producto no encontrado en stock Cianbox -> Carga genérica manual
                         desc_manual = f"{prod['codigo']} {prod['descripcion']}"
                         escribir_teclado(driver, (By.CSS_SELECTOR, ".box_main_field"), desc_manual)
+                        
+                        # Setear IVA explícitamente para el producto genérico
+                        iva_val = "1.2100" if "21" in str(prod.get("iva", "21.00")) else ("1.1050" if "10.5" in str(prod.get("iva", "")) else "1.0000")
+                        try:
+                            Select(driver.find_element(By.NAME, "add_alicuota_iva")).select_by_value(iva_val)
+                        except Exception:
+                            pass
                     
                     escribir_seguro(driver, SELECTORES["cant"], prod["cantidad"])
                     precio_limpio = limpiar_monto_para_input(prod["precio"])
                     escribir_seguro(driver, SELECTORES["precio"], precio_limpio)
-                    driver.find_element(*SELECTORES["btn_add"]).click()
+                    click_seguro(driver, SELECTORES["btn_add"])
 
                     try:
                         WebDriverWait(driver, 3, poll_frequency=0.1).until(
@@ -702,31 +716,49 @@ def procesar_lote_en_memoria(driver, facturas, db=None):
                     try:
                         click_seguro(driver, SELECTORES["tab_percepciones"])
                         wait.until(EC.element_to_be_clickable(SELECTORES["select_provincia"]))
-
                         for perc in cab["percepciones_iibb"]:
                             jurisdiccion = perc.get("jurisdiccion", "Capital Federal")
-                            monto = str(perc["monto"])
-                            id_prov = MAPEO_PROVINCIAS.get(jurisdiccion, "23")
-                            print(f"      📍 Percepción IIBB {jurisdiccion} (ID {id_prov}): ${monto}")
-
-                            Select(driver.find_element(*SELECTORES["select_provincia"])).select_by_value(id_prov)
-                            campo_monto = driver.find_element(*SELECTORES["monto_percepcion"])
-                            monto_limpio = limpiar_monto_para_input(monto)
-                            campo_monto.send_keys(monto_limpio)
-
+                            monto = str(perc["monto"]).replace("$", "").strip()
+                            print(f"      📍 Percepción IIBB {jurisdiccion}: ${monto}")
+                            # Seleccionar la percepción por texto visible (más fiable que ID fijo)
+                            try:
+                                select_elem = driver.find_element(*SELECTORES["select_provincia"])
+                                Select(select_elem).select_by_visible_text(jurisdiccion)
+                            except Exception as sel_err:
+                                # Fallback: buscar coincidencia parcial en los textos de opción
+                                try:
+                                    opciones = select_elem.find_elements(By.TAG_NAME, "option")
+                                    encontrado = False
+                                    for opt in opciones:
+                                        if jurisdiccion.lower() in opt.text.lower():
+                                            opt.click()
+                                            encontrado = True
+                                            break
+                                    if not encontrado:
+                                        raise Exception(f"Opción no encontrada para '{jurisdiccion}'")
+                                except Exception as inner_err:
+                                    print(f"⚠️ No se pudo seleccionar percepción '{jurisdiccion}': {inner_err}")
+                                    continue
+                            escribir_seguro(driver, SELECTORES["monto_percepcion"], monto)
                             try:
                                 driver.find_element(*SELECTORES["btn_add_percepcion"]).click()
-                            except:
+                            except Exception:
                                 driver.execute_script("document.getElementById('add_impuesto').click();")
-
                             time.sleep(0.3)
                         print("      ✅ Percepciones de IIBB agregadas.")
                     except Exception as perc_err:
                         print(f"      ⚠️ No se pudo cargar percepción IIBB: {perc_err}")
 
+                # Re-confirmar opción de stock justo antes de guardar por si algún evento AJAX de producto lo reseteó
+                try:
+                    Select(driver.find_element(*SELECTORES["select_stock"])).select_by_value(opt_stock)
+                except Exception:
+                    pass
+
                 # 5. Guardar
                 old_fecha_el = driver.find_element(*SELECTORES["fecha"])
-                driver.find_element(*SELECTORES["guardar"]).click()
+                click_seguro(driver, SELECTORES["guardar"])
+
 
                 # Esperar 4 segundos a que Cianbox responda y procese la solicitud
                 time.sleep(2)

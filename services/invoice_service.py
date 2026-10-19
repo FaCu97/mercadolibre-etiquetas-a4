@@ -22,6 +22,13 @@ class InvoiceService:
             parser = self.dispatcher.get_parser(pdf_path)
             datos = parser.extract(pdf_path)
             
+            cuit_receptor = str(datos.get("cuit_receptor", "")).replace("-", "").strip()
+            cuit_sucursal_1 = os.getenv("CUIT_SUCURSAL_1", "30719342457")
+            cuit_sucursal_0 = os.getenv("CUIT_SUCURSAL_0", "20173327324")
+            
+            if cuit_receptor and cuit_receptor not in [cuit_sucursal_1, cuit_sucursal_0]:
+                raise ValueError(f"El CUIT receptor de la factura ({cuit_receptor}) no corresponde a los contribuyentes aceptados ({cuit_sucursal_0}, {cuit_sucursal_1}).")
+
             # Buscar únicamente proveedores PREVIAMENTE HOMOLOGADOS en SQLite (con id_cianbox o CUIT registrado)
             prov_cuit = str(datos.get("cuit_proveedor", "")).replace("-", "").strip()
             prov_nombre = datos.get("proveedor", "CROMOSOL").upper()
@@ -75,13 +82,37 @@ class InvoiceService:
             ).first()
 
             if factura_existente:
-                print(f"ℹ️ La factura {num_comp} de {prov_nombre} ya está en la Base de Datos. Registrando intento de re-ingreso...")
-                log_dup = ProcesoLog(
+                # Update existing invoice with freshly parsed data
+                print(f"ℹ️ Factura {num_comp} ya existía – actualizando campos con los datos recién extraídos...")
+                # Core fields
+                factura_existente.tipo_comprobante = datos.get("tipo_comprobante")
+                factura_existente.fecha_emision = datos.get("fecha_emision")
+                factura_existente.neto = datos.get("neto")
+                factura_existente.iva = datos.get("iva")
+                factura_existente.percepciones = datos.get("percepciones")
+                factura_existente.total = datos.get("total")
+                factura_existente.mueve_stock = datos.get("mueve_stock", True)
+                factura_existente.cuit_receptor = datos.get("cuit_receptor")
+                factura_existente.fecha_procesamiento = datetime.utcnow()
+                # Replace items (clear existing and add new ones)
+                factura_existente.items.clear()
+                for item in datos.get("items", []):
+                    db_item = FacturaItem(
+                        factura_id=factura_existente.id,
+                        codigo=item.get("codigo"),
+                        descripcion=item["descripcion"],
+                        cantidad=item["cantidad"],
+                        precio_unitario=item["precio_unitario"],
+                        subtotal=item["subtotal"]
+                    )
+                    self.db.add(db_item)
+                # Log the update
+                log_upd = ProcesoLog(
                     factura_id=factura_existente.id,
-                    nivel="WARNING",
-                    mensaje=f"Intento de re-ingreso o adjunto duplicado recibido ({archivo_nombre}). Conservado en disco."
+                    nivel="INFO",
+                    mensaje=f"Factura {num_comp} re‑ingresada y campos actualizados."
                 )
-                self.db.add(log_dup)
+                self.db.add(log_upd)
                 self.db.commit()
                 return factura_existente
 
@@ -100,9 +131,12 @@ class InvoiceService:
                 total=datos["total"],
                 archivo_pdf_path=pdf_path,
                 archivo_nombre=archivo_nombre,
+                mueve_stock=datos.get("mueve_stock", True),
+                cuit_receptor=datos.get("cuit_receptor"),
                 estado=estado_inicial,
                 fecha_procesamiento=datetime.utcnow()
             )
+
             self.db.add(factura)
             self.db.commit()
             self.db.refresh(factura)

@@ -109,8 +109,9 @@ class CromosolParser(BaseInvoiceParser):
 
             mueve_stock = True
             if tipo == "NOTA DE CREDITO":
-                if re.search(r'POR:\s*(VOLUMEN|OFERTA|OPERACI[OÓ]N|ARREGLO)|(VOLUMEN|OFERTA|OPERACI[OÓ]N|ARREGLO)\s*ID', full_text, re.IGNORECASE):
+                if re.search(r'POR:\s*(VOLUMEN|OFERTA|OPERACI[OÓ]N|ARREGLO|DROPSHIPPING)|(VOLUMEN|OFERTA|OPERACI[OÓ]N|ARREGLO|DROPSHIPPING)\s*ID|DROPSHIPPING', full_text, re.IGNORECASE):
                     mueve_stock = False
+
 
             letra = "A"
             match_letra = re.search(r'(?:^|\n)\s*([ABCE])\s*(?:$|\n)', header_text)
@@ -121,6 +122,15 @@ class CromosolParser(BaseInvoiceParser):
             m_f = re.search(r'FECHA:\s*(\d{2}-\d{2}-\d{4})', full_text)
             if m_f:
                 fecha = m_f.group(1).replace('-', '/')
+                
+            cuit_receptor = ""
+            # Buscar el CUIT del receptor (distinto al de CROMOSOL)
+            cuits_completos = re.findall(r'\b(?:20|23|24|27|30|33)-?\d{8}-?\d\b', full_text)
+            for c in cuits_completos:
+                c_clean = c.replace("-", "")
+                if c_clean != "30500728317":
+                    cuit_receptor = c_clean
+                    break
             
             punto_venta, numero = "0000", "00000000"
             m_n = re.search(r'(\d{4})-(\d{8})', full_text)
@@ -223,7 +233,8 @@ class CromosolParser(BaseInvoiceParser):
             # Retorno de datos estandarizados
             return {
                 "proveedor": "CROMOSOL",
-                "cuit_proveedor": "30500123456",
+                "cuit_proveedor": "30500728317",
+                "cuit_receptor": cuit_receptor,
                 "tipo_comprobante": f"{tipo} {letra}",
                 "numero_comprobante": f"{punto_venta}-{numero}",
                 "fecha_emision": fecha,
