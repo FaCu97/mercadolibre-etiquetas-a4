@@ -1,0 +1,4 @@
+*
+!Dockerfile
+!init/
+!init/10-apps.sh

@@ -1,0 +1,59 @@
+name: negocio-infra
+services:
+  postgres:
+    build: .
+    image: negocio-postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/admin_password
+      POSTGRES_INITDB_ARGS: --data-checksums --auth-host=scram-sha-256
+      TZ: America/Argentina/Buenos_Aires
+    secrets:
+      - admin_password
+      - gestion_password
+      - conector_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - database
+    shm_size: 256mb
+    mem_limit: 1536m
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=40
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - timezone=America/Argentina/Buenos_Aires
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+secrets:
+  admin_password:
+    file: ./secrets/admin_password
+  gestion_password:
+    file: ./secrets/gestion_password
+  conector_password:
+    file: ./secrets/conector_password
+volumes:
+  postgres_data:
+networks:
+  database:
+    name: negocio-database
+    internal: true
