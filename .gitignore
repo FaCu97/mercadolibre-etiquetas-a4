@@ -17,3 +17,6 @@ __pycache__/
 
 .DS_Store
 .env
+# PostgreSQL: credentials and local backups
+infra/postgres/secrets/
+infra/postgres/backups/
